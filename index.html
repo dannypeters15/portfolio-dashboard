@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio Risk Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:       #0b0d12;
+  --surface:  #111520;
+  --surface2: #181d2a;
+  --border:   #1e2535;
+  --text:     #e1e5f0;
+  --muted:    #4a5268;
+  --accent:   #4f9ef8;
+  --green:    #34d399;
+  --yellow:   #fbbf24;
+  --orange:   #fb923c;
+  --red:      #f87171;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:14px;scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospace;min-height:100vh;line-height:1.6}
+
+/* ── Header ── */
+header{position:sticky;top:0;z-index:100;background:rgba(11,13,18,.96);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:.9rem 1.5rem;display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap}
+.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:1.1rem;letter-spacing:-.02em;white-space:nowrap}
+.logo span{color:var(--accent)}
+.tabs{display:flex;gap:4px;background:var(--surface2);border-radius:6px;padding:3px}
+.tab-btn{padding:.35rem .9rem;border:none;background:transparent;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:.72rem;cursor:pointer;border-radius:4px;transition:all .2s;letter-spacing:.06em;text-transform:uppercase}
+.tab-btn.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.header-right{margin-left:auto;display:flex;align-items:center;gap:1rem}
+.updated{font-size:.62rem;color:var(--muted)}
+.gear-btn{background:none;border:1px solid var(--border);color:var(--muted);padding:.3rem .6rem;border-radius:4px;cursor:pointer;font-size:.8rem;transition:all .2s}
+.gear-btn:hover{border-color:var(--accent);color:var(--text)}
+
+/* ── Main ── */
+main{max-width:1400px;margin:0 auto;padding:1.5rem}
+
+/* ── Summary Cards ── */
+.summary-row{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:1.5rem}
+.summary-card{background:var(--surface);padding:1rem 1.2rem}
+.summary-label{font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.35rem}
+.summary-value{font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:700}
+.summary-sub{font-size:.65rem;color:var(--muted);margin-top:.15rem}
+@media(max-width:600px){.summary-row{grid-template-columns:repeat(2,1fr)}}
+
+/* ── Section headers ── */
+.section-hd{font-family:'Syne',sans-serif;font-weight:700;font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);margin-bottom:.8rem;padding-bottom:.5rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+
+/* ── Heatmap ── */
+.heatmap{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:1.5rem}
+.heat-card{background:var(--surface);padding:1rem;cursor:pointer;transition:background .2s;position:relative}
+.heat-card:hover{background:var(--surface2)}
+.heat-ticker{font-family:'Syne',sans-serif;font-weight:800;font-size:1rem;letter-spacing:-.02em}
+.heat-name{font-size:.6rem;color:var(--muted);margin-bottom:.6rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.heat-risk-val{font-size:1.1rem;font-weight:600;margin-bottom:.25rem}
+.risk-bar-wrap{background:var(--border);border-radius:2px;height:4px;margin-bottom:.5rem;overflow:hidden}
+.risk-bar-fill{height:4px;border-radius:2px;transition:width .3s}
+.heat-price{font-size:.78rem;color:var(--text)}
+.heat-zone{display:inline-block;font-size:.55rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:.1rem .45rem;border-radius:2px;margin-top:.3rem}
+.zone-accumulate{background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.2)}
+.zone-neutral   {background:rgba(251,191,36,.1); color:var(--yellow);border:1px solid rgba(251,191,36,.2)}
+.zone-caution   {background:rgba(251,146,60,.1); color:var(--orange);border:1px solid rgba(251,146,60,.2)}
+.zone-extreme   {background:rgba(248,113,113,.12);color:var(--red);  border:1px solid rgba(248,113,113,.2)}
+.zone-unknown   {background:rgba(74,82,104,.1);  color:var(--muted); border:1px solid var(--border)}
+.heat-error{font-size:.62rem;color:var(--muted);font-style:italic;margin-top:.3rem}
+
+/* ── Table ── */
+.table-wrap{overflow-x:auto;margin-bottom:1.5rem}
+table{width:100%;border-collapse:collapse;font-size:.73rem}
+th{text-align:left;padding:.5rem .8rem;color:var(--muted);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;border-bottom:1px solid var(--border);background:var(--surface);cursor:pointer;white-space:nowrap;user-select:none}
+th:hover{color:var(--text)}
+th .sort-arrow{margin-left:.3rem;opacity:.4}
+th.sort-asc .sort-arrow::after{content:'↑';opacity:1}
+th.sort-desc .sort-arrow::after{content:'↓';opacity:1}
+td{padding:.45rem .8rem;border-bottom:1px solid rgba(30,37,53,.7);white-space:nowrap}
+tr:hover td{background:var(--surface2)}
+.td-ticker{font-family:'Syne',sans-serif;font-weight:700;font-size:.85rem;cursor:pointer}
+.td-ticker:hover{color:var(--accent)}
+.td-risk{font-weight:600}
+.td-risk-bar{display:flex;align-items:center;gap:.5rem}
+.mini-bar{width:80px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;flex-shrink:0}
+.mini-bar-fill{height:4px;border-radius:2px}
+.pos{color:var(--green)}.neg{color:var(--red)}
+
+/* ── Stock Modal ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center;padding:1rem}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;width:100%;max-width:760px;max-height:90vh;overflow-y:auto;position:relative}
+.modal-header{padding:1.2rem 1.5rem;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
+.modal-ticker{font-family:'Syne',sans-serif;font-weight:800;font-size:1.5rem}
+.modal-name{font-size:.72rem;color:var(--muted);margin-top:.1rem}
+.modal-close{background:none;border:1px solid var(--border);color:var(--muted);padding:.3rem .6rem;border-radius:4px;cursor:pointer;font-size:.9rem;flex-shrink:0}
+.modal-close:hover{color:var(--text);border-color:var(--text)}
+.modal-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.modal-metric{background:var(--surface2);padding:.8rem 1rem}
+.modal-metric-label{font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;margin-bottom:.2rem}
+.modal-metric-value{font-family:'Syne',sans-serif;font-weight:700;font-size:1rem}
+.modal-charts{padding:1.2rem 1.5rem;display:flex;flex-direction:column;gap:1.2rem}
+.chart-title{font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem}
+.chart-box{height:200px;position:relative}
+@media(max-width:600px){.modal-metrics{grid-template-columns:repeat(2,1fr)}}
+
+/* ── Ideas Tab ── */
+.ideas-toolbar{display:flex;align-items:center;gap:.8rem;margin-bottom:1.2rem;flex-wrap:wrap}
+.ideas-filter{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:.4rem .7rem;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:.72rem;cursor:pointer}
+.new-idea-btn{background:var(--accent);color:#fff;border:none;padding:.45rem 1rem;border-radius:4px;font-family:'Syne',sans-serif;font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;cursor:pointer;transition:opacity .2s;margin-left:auto}
+.new-idea-btn:hover{opacity:.85}
+.ideas-feed{display:flex;flex-direction:column;gap:1rem}
+.idea-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.idea-card-header{padding:.8rem 1rem;display:flex;align-items:center;gap:.6rem;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.idea-avatar{width:28px;height:28px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:700;font-size:.65rem;color:#fff;flex-shrink:0}
+.idea-meta{display:flex;flex-direction:column;flex:1;min-width:0}
+.idea-username{font-weight:600;font-size:.72rem}
+.idea-date{font-size:.6rem;color:var(--muted)}
+.idea-ticker-chip{background:var(--surface2);border:1px solid var(--border);padding:.1rem .5rem;border-radius:3px;font-family:'Syne',sans-serif;font-weight:700;font-size:.65rem;cursor:pointer}
+.idea-ticker-chip:hover{border-color:var(--accent);color:var(--accent)}
+.bull-badge{background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.25);padding:.1rem .5rem;border-radius:3px;font-size:.6rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.bear-badge{background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.25);padding:.1rem .5rem;border-radius:3px;font-size:.6rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.idea-stars{color:var(--yellow);font-size:.75rem;letter-spacing:.05em}
+.idea-card-body{padding:.9rem 1rem}
+.idea-text{font-size:.73rem;line-height:1.7;margin-bottom:.6rem;color:var(--text)}
+.idea-img{max-width:100%;border-radius:4px;margin-top:.5rem;border:1px solid var(--border);cursor:pointer}
+.no-ideas{text-align:center;padding:3rem;color:var(--muted);font-size:.75rem}
+
+/* ── New Idea Modal ── */
+.idea-modal-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;width:100%;max-width:520px;padding:1.5rem}
+.idea-modal-title{font-family:'Syne',sans-serif;font-weight:800;font-size:1rem;margin-bottom:1.2rem}
+.form-row{display:flex;gap:.8rem;margin-bottom:.9rem;flex-wrap:wrap}
+.form-group{display:flex;flex-direction:column;gap:.3rem;flex:1;min-width:120px}
+.form-label{font-size:.6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.09em}
+input[type=text],select,textarea{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:.45rem .7rem;font-family:'IBM Plex Mono',monospace;font-size:.75rem;border-radius:4px;outline:none;transition:border-color .2s}
+input[type=text]:focus,select:focus,textarea:focus{border-color:rgba(79,158,248,.5)}
+textarea{resize:vertical;min-height:80px}
+.bull-bear-toggle{display:flex;gap:4px}
+.bb-btn{flex:1;padding:.4rem;border:1px solid var(--border);background:transparent;color:var(--muted);font-family:'Syne',sans-serif;font-weight:700;font-size:.65rem;letter-spacing:.08em;text-transform:uppercase;border-radius:4px;cursor:pointer;transition:all .2s}
+.bb-btn.active-bull{background:rgba(52,211,153,.15);color:var(--green);border-color:rgba(52,211,153,.4)}
+.bb-btn.active-bear{background:rgba(248,113,113,.15);color:var(--red);border-color:rgba(248,113,113,.4)}
+.star-picker{display:flex;gap:.2rem}
+.star-pick{font-size:1.1rem;cursor:pointer;color:var(--border);transition:color .15s}
+.star-pick.lit{color:var(--yellow)}
+.file-input-wrap{border:1px dashed var(--border);border-radius:4px;padding:.8rem;text-align:center;cursor:pointer;transition:border-color .2s;font-size:.65rem;color:var(--muted)}
+.file-input-wrap:hover{border-color:var(--accent)}
+.img-preview{max-width:100%;max-height:150px;border-radius:4px;margin-top:.5rem;display:none}
+.form-actions{display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem}
+.cancel-btn{background:none;border:1px solid var(--border);color:var(--muted);padding:.45rem 1rem;border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:.72rem;cursor:pointer}
+.cancel-btn:hover{color:var(--text)}
+.submit-btn{background:var(--accent);color:#fff;border:none;padding:.45rem 1.2rem;border-radius:4px;font-family:'Syne',sans-serif;font-weight:700;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:opacity .2s}
+.submit-btn:hover{opacity:.85}
+.submit-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Settings Modal ── */
+.settings-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;width:100%;max-width:420px;padding:1.5rem}
+.settings-title{font-family:'Syne',sans-serif;font-weight:800;font-size:.95rem;margin-bottom:1rem}
+.settings-note{font-size:.65rem;color:var(--muted);line-height:1.7;margin-bottom:1rem;padding:.7rem;background:var(--surface2);border-radius:4px;border:1px solid var(--border)}
+.settings-note a{color:var(--accent);text-decoration:none}
+
+/* ── Image Lightbox ── */
+.lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:300;align-items:center;justify-content:center;cursor:zoom-out}
+.lightbox.open{display:flex}
+.lightbox img{max-width:90vw;max-height:90vh;border-radius:4px}
+
+/* ── Loading / Error ── */
+#loading{text-align:center;padding:5rem;color:var(--muted)}
+.spinner{width:32px;height:32px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 1rem}
+@keyframes spin{to{transform:rotate(360deg)}}
+#error-state{display:none;text-align:center;padding:4rem 2rem;color:var(--muted)}
+#error-state h3{color:var(--orange);margin-bottom:.5rem;font-family:'Syne',sans-serif}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">📊 <span>Portfolio</span> Risk</div>
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('dashboard')">Dashboard</button>
+    <button class="tab-btn" onclick="switchTab('ideas')">Ideas</button>
+  </div>
+  <div class="header-right">
+    <div class="updated" id="updated-time">Loading…</div>
+    <button class="gear-btn" onclick="openSettings()" title="Settings">⚙</button>
+  </div>
+</header>
+
+<main>
+  <div id="loading"><div class="spinner"></div><div>Loading portfolio data…</div></div>
+
+  <div id="error-state">
+    <h3>No data yet</h3>
+    <p style="font-size:.72rem;line-height:1.9">
+      Run the GitHub Action to generate <code style="color:var(--accent)">data.json</code>:<br>
+      Go to your repo → <strong>Actions</strong> → <strong>Update Dashboard Data</strong> → <strong>Run workflow</strong>
+    </p>
+  </div>
+
+  <!-- Dashboard Tab -->
+  <div id="tab-dashboard" style="display:none">
+    <div class="summary-row" id="summary-row"></div>
+    <div class="section-hd">Risk Heatmap <span style="font-size:.6rem;color:var(--muted)">click any card for details</span></div>
+    <div class="heatmap" id="heatmap"></div>
+    <div class="section-hd">
+      All Stocks
+      <span style="font-size:.6rem;color:var(--muted)">click a column header to sort</span>
+    </div>
+    <div class="table-wrap">
+      <table id="stocks-table">
+        <thead>
+          <tr>
+            <th onclick="sortTable('ticker')">Ticker<span class="sort-arrow"></span></th>
+            <th onclick="sortTable('name')">Name<span class="sort-arrow"></span></th>
+            <th onclick="sortTable('price')">Price<span class="sort-arrow"></span></th>
+            <th onclick="sortTable('risk')">Risk<span class="sort-arrow"></span></th>
+            <th>Zone</th>
+            <th onclick="sortTable('fair_value')">Fair Value<span class="sort-arrow"></span></th>
+            <th onclick="sortTable('deviation')">Deviation<span class="sort-arrow"></span></th>
+            <th onclick="sortTable('ret_1y')">1Y Return<span class="sort-arrow"></span></th>
+            <th onclick="sortTable('allocation')">Alloc%<span class="sort-arrow"></span></th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Ideas Tab -->
+  <div id="tab-ideas" style="display:none">
+    <div class="ideas-toolbar">
+      <select class="ideas-filter" id="ideas-ticker-filter" onchange="renderIdeas()">
+        <option value="">All Tickers</option>
+      </select>
+      <select class="ideas-filter" id="ideas-label-filter" onchange="renderIdeas()">
+        <option value="">Bull &amp; Bear</option>
+        <option value="bull">Bull only</option>
+        <option value="bear">Bear only</option>
+      </select>
+      <button class="new-idea-btn" onclick="openNewIdea()">+ New Idea</button>
+    </div>
+    <div class="ideas-feed" id="ideas-feed">
+      <div class="no-ideas">Loading ideas…</div>
+    </div>
+  </div>
+</main>
+
+<!-- Stock Detail Modal -->
+<div class="modal-overlay" id="stock-modal" onclick="closeStockModal(event)">
+  <div class="modal-box" id="stock-modal-box">
+    <div class="modal-header">
+      <div>
+        <div class="modal-ticker" id="modal-ticker"></div>
+        <div class="modal-name" id="modal-name"></div>
+      </div>
+      <button class="modal-close" onclick="document.getElementById('stock-modal').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-metrics" id="modal-metrics"></div>
+    <div class="modal-charts">
+      <div>
+        <div class="chart-title">Price — 1 Year (Log Scale)</div>
+        <div class="chart-box"><canvas id="modal-price-chart"></canvas></div>
+      </div>
+      <div>
+        <div class="chart-title">Risk Oscillator (0–1)</div>
+        <div class="chart-box"><canvas id="modal-risk-chart"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New Idea Modal -->
+<div class="modal-overlay" id="idea-modal" onclick="closeIdeaModal(event)">
+  <div class="idea-modal-box">
+    <div class="idea-modal-title">Post New Idea</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Your Name</label>
+        <input type="text" id="idea-username" placeholder="Danny" maxlength="30">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Ticker</label>
+        <select id="idea-ticker"></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Bull / Bear</label>
+        <div class="bull-bear-toggle">
+          <button class="bb-btn active-bull" id="bb-bull" onclick="setBullBear('bull')">↑ Bull</button>
+          <button class="bb-btn" id="bb-bear" onclick="setBullBear('bear')">↓ Bear</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Rating</label>
+        <div class="star-picker" id="star-picker">
+          <span class="star-pick lit" data-v="1" onclick="setRating(1)">★</span>
+          <span class="star-pick lit" data-v="2" onclick="setRating(2)">★</span>
+          <span class="star-pick lit" data-v="3" onclick="setRating(3)">★</span>
+          <span class="star-pick" data-v="4" onclick="setRating(4)">★</span>
+          <span class="star-pick" data-v="5" onclick="setRating(5)">★</span>
+        </div>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:.9rem">
+      <label class="form-label">Notes</label>
+      <textarea id="idea-text" placeholder="What's the thesis? Key levels, catalysts, risks…" rows="4"></textarea>
+    </div>
+    <div class="form-group" style="margin-bottom:.9rem">
+      <label class="form-label">Screenshot (optional)</label>
+      <div class="file-input-wrap" onclick="document.getElementById('idea-file').click()">
+        Click to upload chart or screenshot
+        <input type="file" id="idea-file" accept="image/*" style="display:none" onchange="handleImageUpload(event)">
+        <img id="idea-img-preview" class="img-preview">
+      </div>
+    </div>
+    <div id="idea-post-status" style="font-size:.65rem;color:var(--muted);margin-bottom:.5rem;display:none"></div>
+    <div class="form-actions">
+      <button class="cancel-btn" onclick="closeIdeaModalDirect()">Cancel</button>
+      <button class="submit-btn" id="idea-submit-btn" onclick="submitIdea()">Post Idea</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settings-modal" onclick="closeSettingsModal(event)">
+  <div class="settings-box">
+    <div class="settings-title">⚙ Settings</div>
+    <div class="settings-note">
+      To post ideas, enter your GitHub PAT (Personal Access Token) with <code>contents:write</code> scope.<br>
+      <a href="https://github.com/settings/tokens/new?scopes=repo&description=Portfolio+Dashboard" target="_blank">Create one here →</a><br><br>
+      The PAT is stored locally on your device only and never shared.
+    </div>
+    <div class="form-group" style="margin-bottom:.9rem">
+      <label class="form-label">GitHub Owner</label>
+      <input type="text" id="s-owner" placeholder="dannypeters15">
+    </div>
+    <div class="form-group" style="margin-bottom:.9rem">
+      <label class="form-label">GitHub Repo</label>
+      <input type="text" id="s-repo" placeholder="portfolio-dashboard">
+    </div>
+    <div class="form-group" style="margin-bottom:.9rem">
+      <label class="form-label">GitHub PAT (for posting ideas)</label>
+      <input type="text" id="s-pat" placeholder="ghp_xxxxxxxxxxxx">
+    </div>
+    <div class="form-actions">
+      <button class="cancel-btn" onclick="document.getElementById('settings-modal').classList.remove('open')">Cancel</button>
+      <button class="submit-btn" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Image Lightbox -->
+<div class="lightbox" id="lightbox" onclick="document.getElementById('lightbox').classList.remove('open')">
+  <img id="lightbox-img" src="" alt="">
+</div>
+
+<script>
+'use strict';
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let G = { data: null, ideas: [], sortCol: 'risk', sortDir: 1 };
+let ideaState = { label: 'bull', rating: 3, imageB64: null };
+let modalCharts = [];
+
+// ── Settings ───────────────────────────────────────────────────────────────────
+function getSettings() {
+  return {
+    owner: localStorage.getItem('gh_owner') || 'dannypeters15',
+    repo:  localStorage.getItem('gh_repo')  || 'portfolio-dashboard',
+    pat:   localStorage.getItem('gh_pat')   || '',
+  };
+}
+function saveSettings() {
+  localStorage.setItem('gh_owner', document.getElementById('s-owner').value.trim());
+  localStorage.setItem('gh_repo',  document.getElementById('s-repo').value.trim());
+  localStorage.setItem('gh_pat',   document.getElementById('s-pat').value.trim());
+  document.getElementById('settings-modal').classList.remove('open');
+}
+function openSettings() {
+  const s = getSettings();
+  document.getElementById('s-owner').value = s.owner;
+  document.getElementById('s-repo').value  = s.repo;
+  document.getElementById('s-pat').value   = s.pat;
+  document.getElementById('settings-modal').classList.add('open');
+}
+function closeSettingsModal(e) {
+  if (e.target === document.getElementById('settings-modal'))
+    document.getElementById('settings-modal').classList.remove('open');
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#tab-dashboard,#tab-ideas').forEach(t => t.style.display = 'none');
+  event.target.classList.add('active');
+  document.getElementById('tab-' + tab).style.display = 'block';
+  if (tab === 'ideas') loadIdeas();
+}
+
+// ── Risk helpers ───────────────────────────────────────────────────────────────
+function riskColor(r) {
+  if (r == null) return '#4a5268';
+  if (r < 0.35) return '#34d399';
+  if (r < 0.65) return '#fbbf24';
+  if (r < 0.85) return '#fb923c';
+  return '#f87171';
+}
+function zoneClass(z) {
+  if (!z) return 'zone-unknown';
+  return 'zone-' + z.toLowerCase();
+}
+function fmtRisk(r) { return r != null ? r.toFixed(3) : '—'; }
+function fmtPrice(p) { return p != null ? '$' + p.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '—'; }
+function fmtPct(v)   { return v != null ? (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%' : '—'; }
+function stars(n)    { return '★'.repeat(n) + '☆'.repeat(5 - n); }
+
+// ── Data Loading ───────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const r = await fetch('data.json?t=' + Date.now());
+    if (!r.ok) throw new Error('data.json not found');
+    const data = await r.json();
+    G.data = data;
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('tab-dashboard').style.display = 'block';
+
+    const d = new Date(data.generated);
+    document.getElementById('updated-time').textContent =
+      'Updated: ' + d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) +
+      ' ' + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' }) + ' UTC';
+
+    renderSummary(data);
+    renderHeatmap(data);
+    renderTable(data);
+    populateIdeaTickers(data);
+  } catch (e) {
+    console.error(e);
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error-state').style.display = 'block';
+  }
+}
+
+// ── Summary Row ────────────────────────────────────────────────────────────────
+function renderSummary(data) {
+  const stocks = Object.values(data.stocks);
+  const valid  = stocks.filter(s => !s.error);
+  const avgRisk = valid.length
+    ? valid.reduce((a, s) => a + s.risk, 0) / valid.length
+    : null;
+
+  const cards = [
+    { label: 'Total Stocks',    value: stocks.length,         sub: valid.length + ' with live data',  color: 'var(--text)' },
+    { label: 'Avg Portfolio Risk', value: avgRisk ? avgRisk.toFixed(3) : '—', sub: avgRisk ? riskZoneLabel(avgRisk) : '', color: riskColor(avgRisk) },
+    { label: 'In Buy Zone',     value: data.summary.accumulate, sub: 'risk ≤ 0.35', color: 'var(--green)' },
+    { label: 'Caution / Extreme', value: (data.summary.caution||0) + (data.summary.extreme||0), sub: 'risk > 0.65', color: 'var(--orange)' },
+  ];
+
+  document.getElementById('summary-row').innerHTML = cards.map(c => `
+    <div class="summary-card">
+      <div class="summary-label">${c.label}</div>
+      <div class="summary-value" style="color:${c.color}">${c.value}</div>
+      <div class="summary-sub">${c.sub}</div>
+    </div>`).join('');
+}
+function riskZoneLabel(r) {
+  if (r < 0.35) return 'Accumulate';
+  if (r < 0.65) return 'Neutral';
+  if (r < 0.85) return 'Caution';
+  return 'Extreme';
+}
+
+// ── Heatmap ────────────────────────────────────────────────────────────────────
+function renderHeatmap(data) {
+  const sorted = Object.values(data.stocks).sort((a, b) => {
+    if (a.error && !b.error) return 1;
+    if (!a.error && b.error) return -1;
+    return (a.risk ?? 2) - (b.risk ?? 2);
+  });
+
+  document.getElementById('heatmap').innerHTML = sorted.map(s => {
+    if (s.error) return `
+      <div class="heat-card">
+        <div class="heat-ticker">${s.ticker}</div>
+        <div class="heat-name">${s.name}</div>
+        <div class="heat-error">${s.error}</div>
+        <span class="heat-zone zone-unknown">Unknown</span>
+      </div>`;
+
+    const barW = Math.round(s.risk * 100);
+    return `
+      <div class="heat-card" onclick="openStockModal('${s.ticker}')">
+        <div class="heat-ticker">${s.ticker}</div>
+        <div class="heat-name">${s.name}</div>
+        <div class="heat-risk-val" style="color:${riskColor(s.risk)}">${fmtRisk(s.risk)}</div>
+        <div class="risk-bar-wrap"><div class="risk-bar-fill" style="width:${barW}%;background:${riskColor(s.risk)}"></div></div>
+        <div class="heat-price">${fmtPrice(s.price)}</div>
+        <span class="heat-zone ${zoneClass(s.zone)}">${s.zone || 'Unknown'}</span>
+      </div>`;
+  }).join('');
+}
+
+// ── Table ──────────────────────────────────────────────────────────────────────
+let sortDir = {};
+function sortTable(col) {
+  if (G.sortCol === col) G.sortDir *= -1;
+  else { G.sortCol = col; G.sortDir = 1; }
+  document.querySelectorAll('th').forEach(th => th.classList.remove('sort-asc','sort-desc'));
+  const clicked = [...document.querySelectorAll('th')].find(th => th.onclick?.toString().includes(col));
+  if (clicked) clicked.classList.add(G.sortDir === 1 ? 'sort-asc' : 'sort-desc');
+  renderTable(G.data);
+}
+
+function renderTable(data) {
+  const stocks = Object.values(data.stocks).sort((a, b) => {
+    const va = a[G.sortCol] ?? (G.sortDir > 0 ? Infinity : -Infinity);
+    const vb = b[G.sortCol] ?? (G.sortDir > 0 ? Infinity : -Infinity);
+    if (typeof va === 'string') return va.localeCompare(vb) * G.sortDir;
+    return (va - vb) * G.sortDir;
+  });
+
+  document.getElementById('table-body').innerHTML = stocks.map(s => {
+    if (s.error) return `
+      <tr>
+        <td class="td-ticker" onclick="openStockModal('${s.ticker}')">${s.ticker}</td>
+        <td style="color:var(--muted)">${s.name}</td>
+        <td colspan="7" style="color:var(--muted);font-style:italic">${s.error}</td>
+      </tr>`;
+
+    const barW = Math.round(s.risk * 80);
+    const devCls = s.deviation > 0 ? 'pos' : 'neg';
+    const retCls = s.ret_1y != null ? (s.ret_1y >= 0 ? 'pos' : 'neg') : '';
+    return `
+      <tr>
+        <td class="td-ticker" onclick="openStockModal('${s.ticker}')">${s.ticker}</td>
+        <td style="color:var(--muted)">${s.name}</td>
+        <td>${fmtPrice(s.price)}</td>
+        <td class="td-risk">
+          <div class="td-risk-bar">
+            <span style="color:${riskColor(s.risk)}">${fmtRisk(s.risk)}</span>
+            <div class="mini-bar"><div class="mini-bar-fill" style="width:${barW}px;background:${riskColor(s.risk)}"></div></div>
+          </div>
+        </td>
+        <td><span class="heat-zone ${zoneClass(s.zone)}">${s.zone||'—'}</span></td>
+        <td>${fmtPrice(s.fair_value)}</td>
+        <td class="${devCls}">${fmtPct(s.deviation)}</td>
+        <td class="${retCls}">${fmtPct(s.ret_1y)}</td>
+        <td style="color:var(--muted)">${s.allocation}%</td>
+      </tr>`;
+  }).join('');
+}
+
+// ── Stock Modal ────────────────────────────────────────────────────────────────
+function openStockModal(ticker) {
+  const s = G.data.stocks[ticker];
+  if (!s) return;
+
+  document.getElementById('modal-ticker').textContent = ticker;
+  document.getElementById('modal-ticker').style.color = riskColor(s.risk);
+  document.getElementById('modal-name').textContent   = s.name;
+
+  const metrics = [
+    { label: 'Price',      value: fmtPrice(s.price),          color: 'var(--text)' },
+    { label: 'Risk Score', value: fmtRisk(s.risk),             color: riskColor(s.risk) },
+    { label: 'Fair Value', value: fmtPrice(s.fair_value),      color: 'var(--text)' },
+    { label: 'Deviation',  value: fmtPct(s.deviation),         color: s.deviation > 0 ? 'var(--red)' : 'var(--green)' },
+  ];
+  document.getElementById('modal-metrics').innerHTML = metrics.map(m => `
+    <div class="modal-metric">
+      <div class="modal-metric-label">${m.label}</div>
+      <div class="modal-metric-value" style="color:${m.color}">${m.value}</div>
+    </div>`).join('');
+
+  document.getElementById('stock-modal').classList.add('open');
+
+  // Destroy old charts
+  modalCharts.forEach(c => c.destroy());
+  modalCharts = [];
+
+  if (!s.chart || !s.chart.dates.length) return;
+
+  const labels = s.chart.dates;
+  const prices = s.chart.prices;
+  const risks  = s.chart.risks;
+
+  Chart.defaults.color = '#4a5268';
+  Chart.defaults.borderColor = '#1e2535';
+  Chart.defaults.font.family = "'IBM Plex Mono',monospace";
+  Chart.defaults.font.size   = 11;
+
+  const c1 = new Chart(document.getElementById('modal-price-chart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: prices, borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.05,
+        segment: { borderColor: ctx => riskColor(risks[ctx.p1DataIndex] ?? 0) }
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtPrice(ctx.parsed.y) } } },
+      scales: {
+        x: { grid: { color: 'rgba(30,37,53,.8)' }, ticks: { maxTicksLimit: 8, maxRotation: 0 } },
+        y: { type: 'logarithmic', grid: { color: 'rgba(30,37,53,.8)' }, ticks: { callback: v => '$' + v } }
+      }
+    }
+  });
+
+  const c2 = new Chart(document.getElementById('modal-risk-chart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { data: risks, borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.05,
+          segment: { borderColor: ctx => riskColor(risks[ctx.p1DataIndex] ?? 0) } },
+        { data: labels.map(() => 0.35), borderWidth: 1, borderDash: [4,4], borderColor: 'rgba(52,211,153,.3)', pointRadius: 0, fill: false },
+        { data: labels.map(() => 0.65), borderWidth: 1, borderDash: [4,4], borderColor: 'rgba(248,113,113,.3)', pointRadius: 0, fill: false },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { filter: i => i.datasetIndex === 0, callbacks: { label: ctx => 'Risk: ' + ctx.parsed.y.toFixed(3) } } },
+      scales: {
+        x: { grid: { color: 'rgba(30,37,53,.8)' }, ticks: { maxTicksLimit: 8, maxRotation: 0 } },
+        y: { min: 0, max: 1, grid: { color: 'rgba(30,37,53,.8)' } }
+      }
+    }
+  });
+
+  modalCharts = [c1, c2];
+}
+
+function closeStockModal(e) {
+  if (e.target === document.getElementById('stock-modal'))
+    document.getElementById('stock-modal').classList.remove('open');
+}
+
+// ── Ideas ──────────────────────────────────────────────────────────────────────
+async function loadIdeas() {
+  const s = getSettings();
+  const url = `https://api.github.com/repos/${s.owner}/${s.repo}/contents/ideas.json`;
+  try {
+    const headers = { 'Accept': 'application/vnd.github.v3+json' };
+    if (s.pat) headers['Authorization'] = `token ${s.pat}`;
+    const r = await fetch(url, { headers });
+    if (!r.ok) throw new Error('Could not load ideas.json');
+    const meta = await r.json();
+    const raw  = JSON.parse(atob(meta.content.replace(/\n/g,'')));
+    G.ideas = raw.ideas || [];
+    G.ideasSha = meta.sha;
+    renderIdeas();
+  } catch(e) {
+    console.error(e);
+    document.getElementById('ideas-feed').innerHTML =
+      `<div class="no-ideas">Could not load ideas.<br><small style="color:var(--muted)">${e.message}<br>Check settings and make sure the repo/ideas.json exists.</small></div>`;
+  }
+}
+
+function renderIdeas() {
+  const tickerF = document.getElementById('ideas-ticker-filter')?.value || '';
+  const labelF  = document.getElementById('ideas-label-filter')?.value  || '';
+
+  let ideas = [...G.ideas].sort((a,b) => new Date(b.date) - new Date(a.date));
+  if (tickerF) ideas = ideas.filter(i => i.ticker === tickerF);
+  if (labelF)  ideas = ideas.filter(i => i.label  === labelF);
+
+  if (!ideas.length) {
+    document.getElementById('ideas-feed').innerHTML =
+      '<div class="no-ideas">No ideas yet. Be the first to post!</div>';
+    return;
+  }
+
+  document.getElementById('ideas-feed').innerHTML = ideas.map(idea => {
+    const initials = (idea.username || '?').slice(0,2).toUpperCase();
+    const badgeClass = idea.label === 'bull' ? 'bull-badge' : 'bear-badge';
+    const badgeText  = idea.label === 'bull' ? '↑ BULL' : '↓ BEAR';
+    const imgHtml = idea.image
+      ? `<img class="idea-img" src="${idea.image}" alt="chart" onclick="openLightbox('${escapeAttr(idea.image)}')">`
+      : '';
+    return `
+      <div class="idea-card">
+        <div class="idea-card-header">
+          <div class="idea-avatar">${initials}</div>
+          <div class="idea-meta">
+            <div class="idea-username">${escapeHtml(idea.username || 'Anonymous')}</div>
+            <div class="idea-date">${new Date(idea.date).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'})}</div>
+          </div>
+          <span class="idea-ticker-chip" onclick="filterByTicker('${idea.ticker}')">${idea.ticker}</span>
+          <span class="${badgeClass}">${badgeText}</span>
+          <span class="idea-stars">${stars(idea.rating || 3)}</span>
+        </div>
+        <div class="idea-card-body">
+          ${idea.text ? `<div class="idea-text">${escapeHtml(idea.text)}</div>` : ''}
+          ${imgHtml}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function filterByTicker(t) {
+  const el = document.getElementById('ideas-ticker-filter');
+  if (el) { el.value = t; renderIdeas(); }
+}
+
+function populateIdeaTickers(data) {
+  const select = document.getElementById('idea-ticker');
+  const filter = document.getElementById('ideas-ticker-filter');
+  const tickers = Object.keys(data.stocks).sort();
+  const opts = tickers.map(t => `<option value="${t}">${t}</option>`).join('');
+  if (select) select.innerHTML = opts;
+  if (filter) filter.innerHTML = '<option value="">All Tickers</option>' + opts;
+}
+
+// ── New Idea ───────────────────────────────────────────────────────────────────
+function openNewIdea() {
+  ideaState = { label: 'bull', rating: 3, imageB64: null };
+  document.getElementById('idea-username').value = localStorage.getItem('idea_username') || '';
+  document.getElementById('idea-text').value = '';
+  document.getElementById('idea-img-preview').style.display = 'none';
+  document.getElementById('idea-img-preview').src = '';
+  document.getElementById('idea-file').value = '';
+  document.getElementById('idea-post-status').style.display = 'none';
+  setBullBear('bull');
+  setRating(3);
+  document.getElementById('idea-modal').classList.add('open');
+}
+function closeIdeaModal(e) {
+  if (e.target === document.getElementById('idea-modal')) closeIdeaModalDirect();
+}
+function closeIdeaModalDirect() {
+  document.getElementById('idea-modal').classList.remove('open');
+}
+
+function setBullBear(v) {
+  ideaState.label = v;
+  document.getElementById('bb-bull').className = 'bb-btn' + (v==='bull'?' active-bull':'');
+  document.getElementById('bb-bear').className = 'bb-btn' + (v==='bear'?' active-bear':'');
+}
+
+function setRating(v) {
+  ideaState.rating = v;
+  document.querySelectorAll('.star-pick').forEach(s => {
+    s.classList.toggle('lit', parseInt(s.dataset.v) <= v);
+  });
+}
+
+async function handleImageUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  ideaState.imageB64 = await compressImage(file, 900, 0.72);
+  const prev = document.getElementById('idea-img-preview');
+  prev.src = ideaState.imageB64;
+  prev.style.display = 'block';
+}
+
+function compressImage(file, maxW, quality) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const scale  = Math.min(1, maxW / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width  = img.width  * scale;
+        canvas.height = img.height * scale;
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function submitIdea() {
+  const s = getSettings();
+  if (!s.pat) {
+    alert('Please add your GitHub PAT in Settings (⚙) before posting.');
+    return;
+  }
+
+  const username = document.getElementById('idea-username').value.trim() || 'Anonymous';
+  const ticker   = document.getElementById('idea-ticker').value;
+  const text     = document.getElementById('idea-text').value.trim();
+
+  if (!ticker) { alert('Please select a ticker.'); return; }
+
+  localStorage.setItem('idea_username', username);
+
+  const newIdea = {
+    id:       Date.now().toString(36),
+    date:     new Date().toISOString(),
+    username, ticker,
+    label:    ideaState.label,
+    rating:   ideaState.rating,
+    text,
+    image:    ideaState.imageB64 || null,
+  };
+
+  const btn    = document.getElementById('idea-submit-btn');
+  const status = document.getElementById('idea-post-status');
+  btn.disabled = true;
+  status.style.display = 'block';
+  status.textContent   = 'Posting…';
+
+  try {
+    // Re-fetch latest SHA
+    const getUrl = `https://api.github.com/repos/${s.owner}/${s.repo}/contents/ideas.json`;
+    const getR   = await fetch(getUrl, { headers: { 'Authorization': `token ${s.pat}`, 'Accept': 'application/vnd.github.v3+json' } });
+    const getMeta= await getR.json();
+    const currentSha = getMeta.sha;
+    const currentRaw = JSON.parse(atob(getMeta.content.replace(/\n/g,'')));
+
+    currentRaw.ideas = [newIdea, ...(currentRaw.ideas || [])];
+
+    const putBody = {
+      message: `idea: ${username} — ${ticker} ${ideaState.label}`,
+      content: btoa(unescape(encodeURIComponent(JSON.stringify(currentRaw)))),
+      sha:     currentSha,
+    };
+
+    const putR = await fetch(getUrl, {
+      method:  'PUT',
+      headers: { 'Authorization': `token ${s.pat}`, 'Content-Type': 'application/json', 'Accept': 'application/vnd.github.v3+json' },
+      body:    JSON.stringify(putBody),
+    });
+
+    if (!putR.ok) {
+      const err = await putR.json();
+      throw new Error(err.message || putR.statusText);
+    }
+
+    G.ideas = currentRaw.ideas;
+    G.ideasSha = (await putR.json()).content.sha;
+    renderIdeas();
+    closeIdeaModalDirect();
+  } catch(e) {
+    status.textContent = '❌ Failed: ' + e.message;
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Lightbox ───────────────────────────────────────────────────────────────────
+function openLightbox(src) {
+  document.getElementById('lightbox-img').src = src;
+  document.getElementById('lightbox').classList.add('open');
+}
+
+// ── Utilities ──────────────────────────────────────────────────────────────────
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escapeAttr(s) {
+  return String(s).replace(/'/g,'&#39;');
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+loadDashboard();
+</script>
+</body>
+</html>
