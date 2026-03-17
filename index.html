@@ -1342,29 +1342,130 @@ function buildModalCharts(s) {
     }
   });
 
-  // P/E chart
-  if (s.pe_history?.length >= 3) {
+  // P/E chart — colour relative to stock's own historical P/E range
+  const pePanel = document.getElementById('cpanel-pe');
+  if (s.pe_history?.length >= 2) {
+    const peVals   = s.pe_history.map(p => p.pe);
+    const peLabels = s.pe_history.map(p => p.date);
+    const peMin    = Math.min(...peVals);
+    const peMax    = Math.max(...peVals);
+    const peRange  = peMax - peMin || 1;
+
+    // Normalise each PE to 0-1 relative to this stock's own history
+    const peNorm = peVals.map(v => (v - peMin) / peRange);
+
+    const peColor = n => {
+      // green (cheap) → yellow (mid) → orange → red (expensive)
+      if (n < 0.33) return `rgba(74,222,128,0.9)`;
+      if (n < 0.55) return `rgba(251,191,36,0.9)`;
+      if (n < 0.75) return `rgba(251,146,60,0.9)`;
+      return `rgba(248,113,113,0.9)`;
+    };
+
+    // Annual high/low annotations for labels
+    const annualExtremes = {};
+    peVals.forEach((v, i) => {
+      const yr = peLabels[i].slice(0, 4);
+      if (!annualExtremes[yr] || v > annualExtremes[yr].val) {
+        annualExtremes[yr] = { val: v, idx: i, label: peLabels[i] };
+      }
+    });
+
+    // Restore panel HTML (in case it was replaced by no-data message)
+    if (!document.getElementById('m-pe-chart')) {
+      pePanel.innerHTML = '<div class="chart-box"><canvas id="m-pe-chart"></canvas></div>';
+    }
+
     modalCharts.pe = new Chart(document.getElementById('m-pe-chart'), {
       type: 'line',
       data: {
-        labels: s.pe_history.map(p=>p.date),
-        datasets: [{ data:s.pe_history.map(p=>p.pe), borderWidth:2, pointRadius:3,
-          borderColor:'var(--accent2)', backgroundColor:'rgba(167,139,250,.1)', fill:true, tension:0.3 }]
+        labels: peLabels,
+        datasets: [
+          {
+            data: peVals,
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: false,
+            tension: 0.3,
+            segment: {
+              borderColor: ctx => peColor(peNorm[ctx.p1DataIndex] ?? 0)
+            }
+          },
+          // MA line (3-point rolling average)
+          {
+            data: peVals.map((_, i) => {
+              const slice = peVals.slice(Math.max(0, i-2), i+1);
+              return slice.reduce((a,b)=>a+b,0) / slice.length;
+            }),
+            borderWidth: 1,
+            borderDash: [4, 3],
+            borderColor: 'rgba(167,139,250,0.5)',
+            pointRadius: 0,
+            fill: false,
+            tension: 0.4,
+          }
+        ]
       },
       options: {
-        responsive:true, maintainAspectRatio:false, animation:false,
-        plugins:{legend:{display:false}, tooltip:{callbacks:{label:ctx=>`P/E: ${ctx.parsed.y.toFixed(1)}x`}}},
-        scales:{
-          x:{grid:{color:'rgba(100,100,120,.15)'},ticks:{maxTicksLimit:8,maxRotation:0}},
-          y:{grid:{color:'rgba(100,100,120,.15)'},ticks:{callback:v=>v+'x'}}
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            filter: i => i.datasetIndex === 0,
+            callbacks: {
+              label: ctx => {
+                const n = peNorm[ctx.dataIndex] ?? 0;
+                const label = n < 0.33 ? 'Cheap' : n < 0.55 ? 'Fair' : n < 0.75 ? 'Elevated' : 'Expensive';
+                return `P/E: ${ctx.parsed.y.toFixed(1)}x · ${label} (${(n*100).toFixed(0)}th percentile)`;
+              }
+            }
+          },
+          // Annotate annual peaks inline via afterDraw
+        },
+        scales: {
+          x: { grid:{color:'rgba(100,100,120,.15)'}, ticks:{maxTicksLimit:8, maxRotation:0} },
+          y: { grid:{color:'rgba(100,100,120,.15)'}, ticks:{callback:v=>v.toFixed(0)+'x'} }
         }
-      }
+      },
+      plugins: [{
+        id: 'peLabels',
+        afterDraw(chart) {
+          const ctx2 = chart.ctx;
+          const meta = chart.getDatasetMeta(0);
+          ctx2.save();
+          ctx2.font = '10px JetBrains Mono, monospace';
+          ctx2.textAlign = 'center';
+          // Label annual peaks
+          Object.values(annualExtremes).forEach(({ val, idx }) => {
+            const pt = meta.data[idx];
+            if (!pt) return;
+            const n = peNorm[idx] ?? 0;
+            ctx2.fillStyle = peColor(n);
+            ctx2.fillText(val.toFixed(1)+'x', pt.x, pt.y - 8);
+          });
+          ctx2.restore();
+        }
+      }]
     });
+
+    // Add legend below chart
+    const existingLegend = pePanel.querySelector('.pe-legend');
+    if (!existingLegend) {
+      const legend = document.createElement('div');
+      legend.className = 'pe-legend';
+      legend.style.cssText = 'display:flex;gap:1rem;margin-top:.5rem;font-size:.6rem;color:var(--muted);flex-wrap:wrap';
+      legend.innerHTML = `
+        <span style="color:rgba(74,222,128,0.9)">● Cheap (0–33rd %ile)</span>
+        <span style="color:rgba(251,191,36,0.9)">● Fair (33–55th)</span>
+        <span style="color:rgba(251,146,60,0.9)">● Elevated (55–75th)</span>
+        <span style="color:rgba(248,113,113,0.9)">● Expensive (75–100th)</span>
+        <span style="color:rgba(167,139,250,0.5)">-- 3pt MA</span>
+        <span style="color:var(--muted);margin-left:auto">Relative to ${s.ticker}'s own history · min ${peMin.toFixed(1)}x · max ${peMax.toFixed(1)}x</span>`;
+      pePanel.appendChild(legend);
+    }
+
   } else {
-    const ctx = document.getElementById('m-pe-chart').getContext('2d');
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const el = document.getElementById('cpanel-pe');
-    el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--muted);font-size:.72rem">P/E history not available for this stock</div>';
+    pePanel.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--muted);font-size:.72rem">P/E history not available — re-run the data Action to fetch earnings data</div>';
   }
 }
 
