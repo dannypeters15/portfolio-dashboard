@@ -93,9 +93,13 @@ STOCK_LIST = {
 }
 
 # Risk method thresholds (days of history required)
-STRUCTURAL_MIN_DAYS = 1825   # 5+ years → log-linear regression
+STRUCTURAL_MIN_DAYS = 1825   # 5+ years → log-linear regression + sigma bands
 TECHNICAL_MIN_DAYS  = 730    # 2–5 years → RSI + Bollinger composite
 # < 730 days → Early Stage (price percentile)
+
+# Number of standard deviations for risk band edges
+SIGMA_LOWER = 2.0   # regression - 2σ = risk 0.0
+SIGMA_UPPER = 2.0   # regression + 2σ = risk 1.0
 
 
 # ── HTTP helper ────────────────────────────────────────────────────────────────
@@ -124,31 +128,131 @@ def fetch_history(ticker):
 
 
 def fetch_fundamentals(ticker):
-    url = (f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
-           f"?modules=defaultKeyStatistics,summaryDetail,earningsHistory,financialData")
-    try:
-        data   = yahoo_get(url)
-        result = data["quoteSummary"]["result"][0]
-        ks = result.get("defaultKeyStatistics", {})
-        sd = result.get("summaryDetail", {})
-        eh = result.get("earningsHistory", {}).get("history", [])
+    """
+    Robust fundamentals fetch using Yahoo Finance v8 chart API for P/E
+    and quoteSummary for stats. The chart API is far more reliable for
+    earnings data as it's the same endpoint TradingView uses.
+    """
+    def val(d, k):
+        v = d.get(k)
+        return v.get("raw") if isinstance(v, dict) else v
 
-        def val(d, k):
-            v = d.get(k)
-            return v.get("raw") if isinstance(v, dict) else v
+    result = {"earnings_history": []}
 
-        return {
-            "trailing_pe":      val(ks, "trailingPE"),
-            "forward_pe":       val(ks, "forwardPE"),
-            "market_cap":       val(sd, "marketCap"),
-            "week52_high":      val(sd, "fiftyTwoWeekHigh"),
-            "week52_low":       val(sd, "fiftyTwoWeekLow"),
-            "ps_ratio":         val(sd, "priceToSalesTrailingTwelveMonths"),
-            "earnings_history": eh,
-        }
-    except Exception as e:
-        print(f"  ⚠ Fundamentals failed for {ticker}: {e}")
-        return {}
+    # ── Step 1: Summary stats (market cap, 52wk, PE ratio) ──────────────
+    for host in ["query2", "query1"]:
+        url = (f"https://{host}.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
+               f"?modules=defaultKeyStatistics%2CsummaryDetail%2CfinancialData%2Cprice")
+        try:
+            data = yahoo_get(url)
+            res  = data["quoteSummary"]["result"][0]
+            ks   = res.get("defaultKeyStatistics", {})
+            sd   = res.get("summaryDetail", {})
+            fd   = res.get("financialData", {})
+            pr   = res.get("price", {})
+            result.update({
+                "trailing_pe": val(ks,"trailingPE") or val(pr,"trailingPE"),
+                "forward_pe":  val(ks,"forwardPE"),
+                "market_cap":  val(sd,"marketCap") or val(pr,"marketCap"),
+                "week52_high": val(sd,"fiftyTwoWeekHigh"),
+                "week52_low":  val(sd,"fiftyTwoWeekLow"),
+                "ps_ratio":    val(sd,"priceToSalesTrailingTwelveMonths"),
+                "eps_ttm":     val(fd,"trailingEps") or val(ks,"trailingEps"),
+            })
+            print(f"  PE={result.get('trailing_pe','—')}  Cap={result.get('market_cap','—')}")
+            break
+        except Exception as e:
+            print(f"  ⚠ Stats ({host}) failed: {e}")
+
+    time.sleep(0.5)
+
+    # ── Step 2: Earnings history via v8 chart (most reliable) ───────────
+    # Yahoo's chart API includes quarterly EPS in the events section
+    for period in ["max", "10y"]:
+        url = (f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}"
+               f"?interval=3mo&range={period}&includePrePost=false")
+        try:
+            data   = yahoo_get(url)
+            result_chart = data["chart"]["result"][0]
+            # Quarterly closes + timestamps give us price at each quarter
+            ts     = result_chart.get("timestamp", [])
+            closes = result_chart["indicators"]["quote"][0].get("close", [])
+
+            # Check for earnings in meta
+            events = result_chart.get("events", {})
+            earnings_raw = events.get("earnings", {})
+
+            if earnings_raw:
+                eh = []
+                for k_ts, ev in earnings_raw.items():
+                    eps = ev.get("epsActual") or ev.get("eps")
+                    if eps is not None and eps != 0:
+                        eh.append({
+                            "quarter":   {"raw": int(k_ts)},
+                            "epsActual": {"raw": float(eps)},
+                        })
+                if eh:
+                    result["earnings_history"] = sorted(eh, key=lambda x: x["quarter"]["raw"])
+                    print(f"  ✅ Chart API earnings: {len(eh)} quarters")
+                    break
+        except Exception as e:
+            print(f"  ⚠ Chart earnings ({period}) failed: {e}")
+
+    # ── Step 3: earningsHistory module fallback ──────────────────────────
+    if not result["earnings_history"]:
+        time.sleep(0.4)
+        for host in ["query2", "query1"]:
+            url = (f"https://{host}.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
+                   f"?modules=earningsHistory")
+            try:
+                data = yahoo_get(url)
+                res  = data["quoteSummary"]["result"][0]
+                eh   = res.get("earningsHistory", {}).get("history", [])
+                if eh:
+                    result["earnings_history"] = eh
+                    print(f"  ✅ earningsHistory module: {len(eh)} quarters")
+                    break
+            except Exception as e:
+                print(f"  ⚠ earningsHistory ({host}) failed: {e}")
+
+    # ── Step 4: incomeStatementHistoryQuarterly deep fallback ────────────
+    if not result["earnings_history"]:
+        time.sleep(0.4)
+        url = (f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
+               f"?modules=incomeStatementHistoryQuarterly")
+        try:
+            data  = yahoo_get(url)
+            res   = data["quoteSummary"]["result"][0]
+            stmts = res.get("incomeStatementHistoryQuarterly",{}).get("incomeStatementHistory",[])
+            eh = []
+            for s in stmts:
+                q_date  = s.get("endDate", {})
+                eps_raw = s.get("dilutedEPS", {})
+                ni      = s.get("netIncome", {})
+                shares  = s.get("dilutedAverageShares", {})
+                if isinstance(q_date, dict):
+                    ts_val = q_date.get("raw", 0)
+                    # Use diluted EPS if available, else compute from net income / shares
+                    if isinstance(eps_raw, dict) and eps_raw.get("raw") is not None:
+                        eps = eps_raw["raw"]
+                    elif isinstance(ni, dict) and isinstance(shares, dict):
+                        ni_v = ni.get("raw", 0)
+                        sh_v = shares.get("raw", 1)
+                        eps  = ni_v / sh_v if sh_v else None
+                    else:
+                        eps = None
+                    if eps is not None and ts_val:
+                        eh.append({"quarter":{"raw":ts_val},"epsActual":{"raw":float(eps)}})
+            if eh:
+                result["earnings_history"] = sorted(eh, key=lambda x: x["quarter"]["raw"])
+                print(f"  ✅ Income stmt fallback: {len(eh)} quarters")
+        except Exception as e:
+            print(f"  ⚠ Income stmt fallback failed: {e}")
+
+    if not result["earnings_history"]:
+        print(f"  ℹ No earnings history found for {ticker} — P/E chart will be unavailable")
+
+    return result
 
 
 def fetch_news(ticker):
@@ -236,14 +340,29 @@ def calculate_risk(history, inception_str):
         slope, intercept = linear_regression(xs, ys)
         predicted = [slope*x + intercept for x in xs]
         residuals = [y - p for y, p in zip(ys, predicted)]
-        mn, mx = min(residuals), max(residuals)
-        span = mx - mn
-        if span == 0: return None
-        full_risks     = [(r - mn) / span for r in residuals]
+
+        # σ-band normalisation (Cowen-style dynamic bands)
+        # Uses rolling 252-day std dev for responsiveness, falls back to full history
+        std_full = (sum(r**2 for r in residuals) / len(residuals)) ** 0.5
+        # Use full-history sigma for band anchoring (stable, consistent)
+        lower_band = -SIGMA_LOWER * std_full   # risk 0.0 anchor
+        upper_band =  SIGMA_UPPER * std_full   # risk 1.0 anchor
+        band_range = upper_band - lower_band
+
+        if band_range == 0: return None
+
+        full_risks     = [max(0.0, min(1.0, (r - lower_band) / band_range)) for r in residuals]
         current_risk   = full_risks[-1]
         last_x         = xs[-1]
         fair_value     = 10 ** (slope * last_x + intercept)
         deviation      = (prices[-1] - fair_value) / fair_value
+
+        # Also compute what price corresponds to each risk level (like Cowen's tables)
+        risk_price_map = {}
+        for rv in [i/20 for i in range(21)]:
+            # residual = lower_band + rv * band_range
+            target_log = (slope * last_x + intercept) + (lower_band + rv * band_range)
+            risk_price_map[round(rv, 3)] = round(10 ** target_log, 2)
 
     elif days_history >= TECHNICAL_MIN_DAYS:
         method = "Technical"
@@ -316,52 +435,65 @@ def calculate_risk(history, inception_str):
     }
 
     return {
-        "price":        round(last_p, 2),
-        "risk":         round(current_risk, 4),
-        "risk_method":  method,
-        "zone":         risk_zone(current_risk),
-        "fair_value":   round(fair_value, 2) if fair_value else None,
-        "deviation":    round(deviation, 4) if deviation is not None else None,
-        "rsi":          round(rsi_display, 1),
-        "bb_position":  round(bb_display, 3),
-        "hist_risks":   hist_risk_scores,
-        "chart":        chart,
+        "price":          round(last_p, 2),
+        "risk":           round(current_risk, 4),
+        "risk_method":    method,
+        "zone":           risk_zone(current_risk),
+        "fair_value":     round(fair_value, 2) if fair_value else None,
+        "deviation":      round(deviation, 4) if deviation is not None else None,
+        "rsi":            round(rsi_display, 1),
+        "bb_position":    round(bb_display, 3),
+        "hist_risks":     hist_risk_scores,
+        "risk_price_map": locals().get('risk_price_map'),
+        "chart":          chart,
         **returns,
     }
 
 
-def calculate_pe_history(history, earnings_history):
+def calculate_pe_history(history, fundamentals):
     """Trailing P/E at each earnings date (sum of last 4 quarters EPS)."""
-    if not earnings_history or len(earnings_history) < 4:
-        return []
-    try:
-        def get_raw(d, k):
-            v = d.get(k)
-            return v.get("raw") if isinstance(v, dict) else v
+    earnings_history = fundamentals.get("earnings_history", [])
+    eps_ttm          = fundamentals.get("eps_ttm")
 
-        eh = sorted(earnings_history, key=lambda x: get_raw(x, "quarter") or 0)
-        pts = []
-        for i in range(3, len(eh)):
-            q_ts = get_raw(eh[i], "quarter")
-            if not q_ts: continue
-            q_date = date.fromtimestamp(q_ts)
-            eps_vals = []
-            for j in range(4):
-                e = get_raw(eh[i-j], "epsActual")
-                if e is not None: eps_vals.append(e)
-            if len(eps_vals) < 4: continue
-            ttm = sum(eps_vals)
-            if ttm <= 0: continue
-            nearby = [(abs((d - q_date).days), p) for d, p in history if abs((d-q_date).days) < 20]
-            if not nearby: continue
-            _, price = min(nearby)
-            pe = price / ttm
-            if 0 < pe < 500:
-                pts.append({"date": q_date.isoformat(), "pe": round(pe, 1)})
-        return pts[-12:]
-    except Exception as e:
-        print(f"  ⚠ PE history failed: {e}")
-        return []
+    def get_raw(d, k):
+        v = d.get(k)
+        return v.get("raw") if isinstance(v, dict) else v
+
+    pts = []
+
+    # Primary: build rolling TTM P/E from earnings history
+    if earnings_history and len(earnings_history) >= 4:
+        try:
+            eh = sorted(earnings_history, key=lambda x: get_raw(x, "quarter") or 0)
+            for i in range(3, len(eh)):
+                q_ts = get_raw(eh[i], "quarter")
+                if not q_ts: continue
+                q_date = date.fromtimestamp(q_ts)
+                eps_vals = []
+                for j in range(4):
+                    e = get_raw(eh[i-j], "epsActual")
+                    if e is not None: eps_vals.append(e)
+                if len(eps_vals) < 4: continue
+                ttm = sum(eps_vals)
+                if ttm <= 0: continue
+                nearby = [(abs((d2 - q_date).days), p) for d2, p in history if abs((d2-q_date).days) < 25]
+                if not nearby: continue
+                _, price = min(nearby)
+                pe = price / ttm
+                if 0 < pe < 1000:
+                    pts.append({"date": q_date.isoformat(), "pe": round(pe, 1)})
+        except Exception as e:
+            print(f"  ⚠ PE history calculation failed: {e}")
+
+    # Fallback: if we have eps_ttm, compute current P/E as a single point
+    if not pts and eps_ttm and eps_ttm > 0 and history:
+        last_price = history[-1][1]
+        pe = last_price / eps_ttm
+        if 0 < pe < 1000:
+            pts.append({"date": history[-1][0].isoformat(), "pe": round(pe, 1)})
+            print(f"  ℹ Using EPS TTM fallback for P/E: {pe:.1f}x")
+
+    return pts[-20:]
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -405,7 +537,7 @@ def main():
             output["summary"]["unknown"] += 1
             continue
 
-        pe_hist = calculate_pe_history(history, fundamentals.get("earnings_history", []))
+        pe_hist = calculate_pe_history(history, fundamentals)
 
         def v(k): return fundamentals.get(k)
 

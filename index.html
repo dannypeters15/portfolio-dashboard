@@ -539,6 +539,31 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
         <div class="section-title">52-Week Range</div>
         <div class="week52-wrap" id="m-week52"></div>
       </div>
+      <!-- Risk Price Table (Cowen-style) -->
+      <div id="m-risk-price-section" style="display:none">
+        <div class="section-title">Price at Each Risk Level <span>based on current regression</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+          <div>
+            <table style="width:100%;border-collapse:collapse;font-size:.7rem">
+              <thead><tr>
+                <th style="text-align:left;padding:.3rem .5rem;color:var(--muted);font-size:.58rem;text-transform:uppercase;border-bottom:1px solid var(--border)">Risk</th>
+                <th style="text-align:right;padding:.3rem .5rem;color:var(--muted);font-size:.58rem;text-transform:uppercase;border-bottom:1px solid var(--border)">Price</th>
+                <th style="text-align:right;padding:.3rem .5rem;color:var(--muted);font-size:.58rem;text-transform:uppercase;border-bottom:1px solid var(--border)">vs Now</th>
+              </tr></thead>
+              <tbody id="m-risk-price-body"></tbody>
+            </table>
+          </div>
+          <div style="font-size:.65rem;color:var(--muted);padding:.5rem;background:var(--surface2);border-radius:var(--radius-sm);border:1px solid var(--border);line-height:1.8">
+            <div style="font-weight:700;color:var(--text);margin-bottom:.3rem">How to read this</div>
+            Each row shows what price the stock would need to reach for the risk score to equal that level, based on today's regression trend line.<br><br>
+            <span style="color:var(--green)">Green rows</span> = accumulate zone<br>
+            <span style="color:var(--yellow)">Yellow rows</span> = neutral zone<br>
+            <span style="color:var(--orange)">Orange rows</span> = caution zone<br>
+            <span style="color:var(--red)">Red rows</span> = extreme zone
+          </div>
+        </div>
+      </div>
+
       <!-- Charts -->
       <div>
         <div class="chart-tabs">
@@ -1189,6 +1214,9 @@ function openStockModal(ticker) {
   // 52-week bar
   render52Week(s);
 
+  // Risk price table
+  renderRiskPriceTable(s);
+
   // Charts
   buildModalCharts(s);
 
@@ -1484,6 +1512,34 @@ function switchChart(which, btn) {
   document.querySelectorAll('.chart-panel').forEach(p=>p.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('cpanel-'+which).classList.add('active');
+}
+
+function renderRiskPriceTable(s) {
+  const sec = document.getElementById('m-risk-price-section');
+  const body = document.getElementById('m-risk-price-body');
+  if (!s.risk_price_map || Object.keys(s.risk_price_map).length === 0) {
+    sec.style.display = 'none';
+    return;
+  }
+  sec.style.display = 'block';
+  const currentPrice = s.price;
+  const entries = Object.entries(s.risk_price_map)
+    .map(([r, p]) => [parseFloat(r), p])
+    .sort((a, b) => a[0] - b[0]);
+
+  body.innerHTML = entries.map(([r, p]) => {
+    const isCurrent = Math.abs(r - s.risk) < 0.03;
+    const diff = ((p - currentPrice) / currentPrice * 100).toFixed(1);
+    const diffStr = diff >= 0 ? \`+\${diff}%\` : \`\${diff}%\`;
+    const diffCls = diff >= 0 ? 'pos' : 'neg';
+    const bg = isCurrent ? 'background:rgba(167,139,250,.08);' : '';
+    const fw = isCurrent ? 'font-weight:700;' : '';
+    return \`<tr style="\${bg}">
+      <td style="padding:.28rem .5rem;\${fw}color:\${riskColorHex(r)};font-family:'JetBrains Mono',monospace">\${r.toFixed(3)}</td>
+      <td style="padding:.28rem .5rem;\${fw}text-align:right;font-family:'JetBrains Mono',monospace">\${fmtP(p)}</td>
+      <td style="padding:.28rem .5rem;text-align:right;font-size:.65rem" class="\${diffCls}">\${isCurrent ? '← now' : diffStr}</td>
+    </tr>\`;
+  }).join('');
 }
 
 function closeStockModal() {
