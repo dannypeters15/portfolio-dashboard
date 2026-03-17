@@ -1,0 +1,22 @@
+name: Update Dashboard Data
+
+on:
+  schedule:
+    - cron: '30 21 * * 1-5'  # 9:30 PM UTC weekdays — after US market close
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Generate data.json
+        run: python generate_data.py
