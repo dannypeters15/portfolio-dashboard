@@ -1515,7 +1515,7 @@ function switchChart(which, btn) {
 }
 
 function renderRiskPriceTable(s) {
-  const sec = document.getElementById('m-risk-price-section');
+  const sec  = document.getElementById('m-risk-price-section');
   const body = document.getElementById('m-risk-price-body');
   if (!s.risk_price_map || Object.keys(s.risk_price_map).length === 0) {
     sec.style.display = 'none';
@@ -1529,18 +1529,20 @@ function renderRiskPriceTable(s) {
 
   body.innerHTML = entries.map(([r, p]) => {
     const isCurrent = Math.abs(r - s.risk) < 0.03;
-    const diff = ((p - currentPrice) / currentPrice * 100).toFixed(1);
-    const diffStr = diff >= 0 ? \`+\${diff}%\` : \`\${diff}%\`;
-    const diffCls = diff >= 0 ? 'pos' : 'neg';
-    const bg = isCurrent ? 'background:rgba(167,139,250,.08);' : '';
-    const fw = isCurrent ? 'font-weight:700;' : '';
-    return \`<tr style="\${bg}">
-      <td style="padding:.28rem .5rem;\${fw}color:\${riskColorHex(r)};font-family:'JetBrains Mono',monospace">\${r.toFixed(3)}</td>
-      <td style="padding:.28rem .5rem;\${fw}text-align:right;font-family:'JetBrains Mono',monospace">\${fmtP(p)}</td>
-      <td style="padding:.28rem .5rem;text-align:right;font-size:.65rem" class="\${diffCls}">\${isCurrent ? '← now' : diffStr}</td>
-    </tr>\`;
+    const diffPct   = ((p - currentPrice) / currentPrice * 100).toFixed(1);
+    const diffStr   = diffPct >= 0 ? '+' + diffPct + '%' : diffPct + '%';
+    const diffCls   = diffPct >= 0 ? 'pos' : 'neg';
+    const bg        = isCurrent ? 'background:rgba(167,139,250,.08);' : '';
+    const fw        = isCurrent ? 'font-weight:700;' : '';
+    const nowLabel  = isCurrent ? '← now' : diffStr;
+    return '<tr style="' + bg + '">' +
+      '<td style="padding:.28rem .5rem;' + fw + 'color:' + riskColorHex(r) + ';font-family:JetBrains Mono,monospace">' + r.toFixed(3) + '</td>' +
+      '<td style="padding:.28rem .5rem;' + fw + 'text-align:right;font-family:JetBrains Mono,monospace">' + fmtP(p) + '</td>' +
+      '<td style="padding:.28rem .5rem;text-align:right;font-size:.65rem" class="' + (isCurrent ? '' : diffCls) + '">' + nowLabel + '</td>' +
+      '</tr>';
   }).join('');
 }
+
 
 function closeStockModal() {
   document.getElementById('stock-modal').classList.remove('open');
