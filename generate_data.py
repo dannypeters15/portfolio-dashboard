@@ -161,115 +161,98 @@ def fetch_news(ticker):
         return []
 
 
+# Stocks to use AV for P/E history (max 20 = within free tier 25/day limit)
+AV_PE_TICKERS = {
+    "MSFT","AMZN","AAPL","NVDA","META","GOOG","NFLX","TSLA",
+    "ORCL","PLTR","SHOP","AVGO","AMD","INTC","JPM","BLK",
+    "COST","WMT","IBM","ADBE"
+}
+
 def fetch_fundamentals(ticker):
     """
-    Fetch all fundamentals from Alpha Vantage OVERVIEW endpoint.
-    Returns market cap, PE, 52-week range, EPS, analyst targets etc.
-    Falls back to Yahoo for any missing fields.
+    Fetch fundamentals using Yahoo Finance for stats (market cap, PE, 52wk)
+    and Alpha Vantage EARNINGS for quarterly P/E history chart.
+    AV is limited to top 20 stocks to stay within free tier (25 calls/day).
     """
     result = {"earnings_history": []}
 
-    # AV uses slightly different ticker formats
-    av_ticker = (ticker
-        .replace(".TO", "")
-        .replace(".L",  "")
-        .replace("BRK-B", "BRK.B")
-        .replace("CCO.TO", "CCO"))
+    def val(d, k):
+        v = d.get(k)
+        return v.get("raw") if isinstance(v, dict) else v
 
-    # ── Alpha Vantage OVERVIEW (primary for all fundamentals) ────────────
-    if AV_KEY:
-        url = (f"https://www.alphavantage.co/query?function=OVERVIEW"
-               f"&symbol={av_ticker}&apikey={AV_KEY}")
+    # ── Yahoo Finance for all stats (market cap, PE, 52wk, beta etc) ─────
+    # Using v7/quote endpoint which is more reliable than quoteSummary
+    for host in ["query1", "query2"]:
+        url = f"https://{host}.finance.yahoo.com/v7/finance/quote?symbols={ticker}"
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=15) as r:
-                ov = json.loads(r.read())
-
-            if ov.get("Symbol"):
-                mc = ov.get("MarketCapitalization")
-                result.update({
-                    "trailing_pe":  float(ov["TrailingPE"])   if ov.get("TrailingPE")  not in (None,"None","-") else None,
-                    "forward_pe":   float(ov["ForwardPE"])    if ov.get("ForwardPE")   not in (None,"None","-") else None,
-                    "market_cap":   int(mc)                   if mc and mc not in ("None","-","0") else None,
-                    "week52_high":  float(ov["52WeekHigh"])   if ov.get("52WeekHigh")  not in (None,"None","-") else None,
-                    "week52_low":   float(ov["52WeekLow"])    if ov.get("52WeekLow")   not in (None,"None","-") else None,
-                    "ps_ratio":     float(ov["PriceToSalesRatioTTM"]) if ov.get("PriceToSalesRatioTTM") not in (None,"None","-") else None,
-                    "eps_ttm":      float(ov["DilutedEPSTTM"]) if ov.get("DilutedEPSTTM") not in (None,"None","-") else None,
-                    "beta":         float(ov["Beta"])          if ov.get("Beta")        not in (None,"None","-") else None,
-                    "analyst_target": float(ov["AnalystTargetPrice"]) if ov.get("AnalystTargetPrice") not in (None,"None","-") else None,
-                    "sector_av":    ov.get("Sector",""),
-                    "industry":     ov.get("Industry",""),
-                })
-                print(f"  ✅ AV Overview: PE={result.get('trailing_pe')} Cap={result.get('market_cap')}")
-            else:
-                print(f"  ⚠ AV Overview: no data for {av_ticker} (ETF or not listed)")
+            data = yahoo_get(url)
+            q = data["quoteResponse"]["result"]
+            if not q:
+                continue
+            q = q[0]
+            result.update({
+                "trailing_pe":    q.get("trailingPE"),
+                "forward_pe":     q.get("forwardPE"),
+                "market_cap":     q.get("marketCap"),
+                "week52_high":    q.get("fiftyTwoWeekHigh"),
+                "week52_low":     q.get("fiftyTwoWeekLow"),
+                "ps_ratio":       q.get("priceToSalesTrailing12Months"),
+                "eps_ttm":        q.get("epsTrailingTwelveMonths"),
+                "beta":           q.get("beta"),
+                "analyst_target": q.get("targetMeanPrice"),
+                "industry":       q.get("industry",""),
+            })
+            print(f"  ✅ Yahoo v7: PE={result.get('trailing_pe')} Cap={result.get('market_cap')}")
+            break
         except Exception as e:
-            print(f"  ⚠ AV Overview failed for {ticker}: {e}")
-        time.sleep(0.5)
+            print(f"  ⚠ Yahoo v7 ({host}): {e}")
+    time.sleep(0.3)
 
-    # ── Alpha Vantage EARNINGS (quarterly EPS history) ───────────────────
-    if AV_KEY:
+    # ── Alpha Vantage EARNINGS for P/E history (top 20 stocks only) ──────
+    av_ticker = (ticker
+        .replace(".TO","").replace(".L","")
+        .replace("BRK-B","BRK.B").replace("CCO.TO","CCO"))
+
+    if AV_KEY and ticker in AV_PE_TICKERS:
         url = (f"https://www.alphavantage.co/query?function=EARNINGS"
                f"&symbol={av_ticker}&apikey={AV_KEY}")
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=15) as r:
+            req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=20) as r:
                 ed = json.loads(r.read())
 
-            quarterly = ed.get("quarterlyEarnings", [])
-            eh = []
-            for q in quarterly:
-                try:
-                    q_date = date.fromisoformat(q["fiscalDateEnding"])
-                    eps    = q.get("reportedEPS", "None")
-                    if eps in (None, "None", "-", ""):
-                        continue
-                    eps = float(eps)
-                    if eps == 0:
-                        continue
-                    eh.append({
-                        "quarter":   {"raw": int(datetime.combine(q_date, datetime.min.time()).timestamp())},
-                        "epsActual": {"raw": eps},
-                    })
-                except Exception:
-                    continue
-            if eh:
-                eh.sort(key=lambda x: x["quarter"]["raw"])
-                result["earnings_history"] = eh
-                print(f"  ✅ AV Earnings: {len(eh)} quarters")
+            # Check for API limit message
+            if "Information" in ed or "Note" in ed:
+                print(f"  ⚠ AV rate limit hit for {ticker}: {ed.get('Information') or ed.get('Note','')}")
             else:
-                print(f"  ℹ AV Earnings: no quarterly data for {av_ticker}")
+                quarterly = ed.get("quarterlyEarnings", [])
+                eh = []
+                for q in quarterly:
+                    try:
+                        q_date = date.fromisoformat(q["fiscalDateEnding"])
+                        eps    = q.get("reportedEPS","None")
+                        if eps in (None,"None","-",""):
+                            continue
+                        eps = float(eps)
+                        if eps == 0:
+                            continue
+                        eh.append({
+                            "quarter":   {"raw": int(datetime.combine(q_date, datetime.min.time()).timestamp())},
+                            "epsActual": {"raw": eps},
+                        })
+                    except Exception:
+                        continue
+                if eh:
+                    eh.sort(key=lambda x: x["quarter"]["raw"])
+                    result["earnings_history"] = eh
+                    print(f"  ✅ AV Earnings: {len(eh)} quarters")
+                else:
+                    print(f"  ℹ AV: no EPS data for {av_ticker}")
         except Exception as e:
             print(f"  ⚠ AV Earnings failed for {ticker}: {e}")
         time.sleep(0.5)
-
-    # ── Yahoo fallback for EPS TTM if AV had no overview ────────────────
-    if not result.get("market_cap"):
-        for host in ["query2", "query1"]:
-            url = (f"https://{host}.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
-                   f"?modules=defaultKeyStatistics%2CsummaryDetail%2Cprice")
-            try:
-                data = yahoo_get(url)
-                res  = data["quoteSummary"]["result"][0]
-                def val(d, k):
-                    v = d.get(k)
-                    return v.get("raw") if isinstance(v, dict) else v
-                ks = res.get("defaultKeyStatistics", {})
-                sd = res.get("summaryDetail", {})
-                pr = res.get("price", {})
-                result.update({
-                    "trailing_pe":  result.get("trailing_pe") or val(ks,"trailingPE"),
-                    "forward_pe":   result.get("forward_pe")  or val(ks,"forwardPE"),
-                    "market_cap":   result.get("market_cap")  or val(sd,"marketCap") or val(pr,"marketCap"),
-                    "week52_high":  result.get("week52_high") or val(sd,"fiftyTwoWeekHigh"),
-                    "week52_low":   result.get("week52_low")  or val(sd,"fiftyTwoWeekLow"),
-                    "eps_ttm":      result.get("eps_ttm")     or val(ks,"trailingEps"),
-                })
-                if result.get("market_cap"):
-                    print(f"  ✅ Yahoo fallback: Cap={result['market_cap']}")
-                    break
-            except Exception as e:
-                print(f"  ⚠ Yahoo fallback ({host}): {e}")
+    elif ticker not in AV_PE_TICKERS:
+        print(f"  ℹ {ticker} not in AV PE list — skipping earnings fetch")
 
     return result
 
