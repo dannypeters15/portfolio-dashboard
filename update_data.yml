@@ -19,4 +19,6 @@ jobs:
         with:
           python-version: '3.11'
       - name: Generate data.json
+        env:
+          ALPHA_VANTAGE_KEY: ${{ secrets.ALPHA_VANTAGE_KEY }}
         run: python generate_data.py
