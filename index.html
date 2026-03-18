@@ -228,7 +228,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
 .modal-actions{display:flex;gap:.4rem;align-items:flex-start}
 .modal-close{background:none;border:1px solid var(--border);color:var(--muted);padding:.3rem .55rem;border-radius:var(--radius-sm);cursor:pointer;font-size:.85rem;line-height:1}
 .modal-close:hover{color:var(--text)}
-.modal-metrics-row{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--border);border-top:1px solid var(--border);margin-top:.8rem;border-radius:4px;overflow:hidden}
+.modal-metrics-row{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--border);border-top:1px solid var(--border);margin-top:.8rem;border-radius:4px;overflow:hidden;flex-wrap:wrap}
 .modal-metric{background:var(--surface2);padding:.6rem .7rem}
 .modal-metric .lbl{font-size:.55rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.15rem}
 .modal-metric .val{font-family:'JetBrains Mono',monospace;font-size:.85rem;font-weight:600}
@@ -1199,11 +1199,16 @@ function openStockModal(ticker) {
 
   // Metrics row
   const m = [
-    { lbl:'Price',      val:fmtP(s.price),          color:'' },
-    { lbl:'Risk',       val:fmtR(s.risk),            color:riskColor(s.risk) },
-    { lbl:'Fair Value', val:fmtP(s.fair_value),      color:'' },
-    { lbl:'Deviation',  val:fmtPct(s.deviation),     color:s.deviation!=null?(s.deviation>=0?'var(--red)':'var(--green)'):'' },
-    { lbl:'Market Cap', val:fmtCap(s.market_cap),    color:'' },
+    { lbl:'Price',           val:fmtP(s.price),                                    color:'' },
+    { lbl:'Risk',            val:fmtR(s.risk),                                     color:riskColor(s.risk) },
+    { lbl:'Fair Value',      val:fmtP(s.fair_value),                               color:'' },
+    { lbl:'Deviation',       val:fmtPct(s.deviation),                              color:s.deviation!=null?(s.deviation>=0?'var(--red)':'var(--green)'):'' },
+    { lbl:'Market Cap',      val:fmtCap(s.market_cap),                             color:'' },
+    { lbl:'Beta',            val:s.beta!=null?s.beta.toFixed(2):'—',              color:'' },
+    { lbl:'Analyst Target',  val:fmtP(s.analyst_target),                           color:s.analyst_target&&s.price?(s.analyst_target>s.price?'var(--green)':'var(--red)'):'' },
+    { lbl:'P/E (TTM)',       val:fmtPE(s.trailing_pe),                             color:'' },
+    { lbl:'Forward P/E',     val:fmtPE(s.forward_pe),                              color:'' },
+    { lbl:'Industry',        val:s.industry||'—',                                  color:'var(--muted)' },
   ];
   document.getElementById('m-metrics').innerHTML = m.map(x=>`
     <div class="modal-metric">
@@ -1233,10 +1238,10 @@ function openStockModal(ticker) {
       <div class="ind-bar"><div class="ind-fill" style="width:${((s.bb_position||0.5)*100).toFixed(0)}%;background:${riskColorHex(s.bb_position||0.5)}"></div></div>
     </div>
     <div class="indicator-card">
-      <div class="ind-label">P/E (Trailing)</div>
-      <div class="ind-value">${fmtPE(s.trailing_pe)}</div>
-      <div class="ind-label" style="margin-top:.3rem">Forward P/E</div>
-      <div class="val mono" style="font-size:.82rem">${fmtPE(s.forward_pe)}</div>
+      <div class="ind-label">P/S Ratio</div>
+      <div class="ind-value">${s.ps_ratio!=null?s.ps_ratio.toFixed(1)+"x":"—"}</div>
+      <div class="ind-label" style="margin-top:.3rem">52W Position</div>
+      <div class="val mono" style="font-size:.82rem">${s.week52_high&&s.week52_low&&s.price?((s.price-s.week52_low)/(s.week52_high-s.week52_low)*100).toFixed(0)+"%":"—"}</div>
     </div>`;
 
   // Returns
