@@ -228,7 +228,7 @@ def fetch_fundamentals(ticker):
                     if eps == 0:
                         continue
                     eh.append({
-                        "quarter":   {"raw": int(q_date.strftime("%s"))},
+                        "quarter":   {"raw": int(datetime.combine(q_date, datetime.min.time()).timestamp())},
                         "epsActual": {"raw": eps},
                     })
                 except Exception:
@@ -306,7 +306,7 @@ def fetch_eps_history_av(ticker):
                 if eps == 0:
                     continue
                 eh.append({
-                    "quarter":   {"raw": int(q_date.strftime("%s"))},
+                    "quarter":   {"raw": int(datetime.combine(q_date, datetime.min.time()).timestamp())},
                     "epsActual": {"raw": eps},
                 })
             except Exception:
