@@ -101,6 +101,16 @@ TECHNICAL_MIN_DAYS  = 730    # 2–5 years → RSI + Bollinger composite
 SIGMA_LOWER = 2.0   # regression - 2σ = risk 0.0
 SIGMA_UPPER = 2.0   # regression + 2σ = risk 1.0
 
+# Force specific method regardless of history length
+# Use for stocks where long history is misleading (structural decline, spin-offs etc)
+METHOD_OVERRIDES = {
+    "INTC":  "Technical",   # 50yr history distorted by 2000s decline
+    "SONY":  "Technical",   # ADR listing history unreliable pre-2000
+    "IBM":   "Technical",   # Structural decline since 2010 distorts regression
+    "BABA":  "Technical",   # Chinese ADR, political risk distorts trend
+    "CCO":   "Technical",   # Heavily debt-laden, regression unreliable
+}
+
 
 # ── HTTP helper ────────────────────────────────────────────────────────────────
 def yahoo_get(url, timeout=20):
@@ -166,37 +176,25 @@ def fetch_fundamentals(ticker):
 
     time.sleep(0.5)
 
-    # ── Step 2: Earnings history via v8 chart (most reliable) ───────────
-    # Yahoo's chart API includes quarterly EPS in the events section
-    for period in ["max", "10y"]:
-        url = (f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}"
-               f"?interval=3mo&range={period}&includePrePost=false")
-        try:
-            data   = yahoo_get(url)
-            result_chart = data["chart"]["result"][0]
-            # Quarterly closes + timestamps give us price at each quarter
-            ts     = result_chart.get("timestamp", [])
-            closes = result_chart["indicators"]["quote"][0].get("close", [])
-
-            # Check for earnings in meta
-            events = result_chart.get("events", {})
-            earnings_raw = events.get("earnings", {})
-
-            if earnings_raw:
-                eh = []
-                for k_ts, ev in earnings_raw.items():
-                    eps = ev.get("epsActual") or ev.get("eps")
-                    if eps is not None and eps != 0:
-                        eh.append({
-                            "quarter":   {"raw": int(k_ts)},
-                            "epsActual": {"raw": float(eps)},
-                        })
+    # ── Step 2: Earnings via quoteSummary earningsHistory ───────────────
+    time.sleep(0.5)
+    for host in ["query1", "query2"]:
+        for crumb_attempt in range(2):
+            url = (f"https://{host}.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
+                   f"?modules=earningsHistory%2CearningsTrend")
+            try:
+                data = yahoo_get(url)
+                res  = data["quoteSummary"]["result"][0]
+                eh   = res.get("earningsHistory", {}).get("history", [])
                 if eh:
-                    result["earnings_history"] = sorted(eh, key=lambda x: x["quarter"]["raw"])
-                    print(f"  ✅ Chart API earnings: {len(eh)} quarters")
+                    result["earnings_history"] = eh
+                    print(f"  ✅ earningsHistory ({host}): {len(eh)} quarters")
                     break
-        except Exception as e:
-            print(f"  ⚠ Chart earnings ({period}) failed: {e}")
+            except Exception as e:
+                print(f"  ⚠ earningsHistory ({host}): {e}")
+                time.sleep(0.3)
+        if result["earnings_history"]:
+            break
 
     # ── Step 3: earningsHistory module fallback ──────────────────────────
     if not result["earnings_history"]:
@@ -321,7 +319,7 @@ def risk_zone(r):
 
 
 # ── Risk calculation ───────────────────────────────────────────────────────────
-def calculate_risk(history, inception_str):
+def calculate_risk(history, inception_str, ticker_hint=""):
     inception = date.fromisoformat(inception_str)
     data = [(d, p) for d, p in history if d >= inception and p > 0]
     if len(data) < 10: return None
@@ -333,7 +331,18 @@ def calculate_risk(history, inception_str):
 
     full_risks = []
 
-    if days_history >= STRUCTURAL_MIN_DAYS:
+    # Determine method — check override first, then history length
+    forced_method = METHOD_OVERRIDES.get(ticker_hint, None)
+    if forced_method:
+        use_method = forced_method
+    elif days_history >= STRUCTURAL_MIN_DAYS:
+        use_method = "Structural"
+    elif days_history >= TECHNICAL_MIN_DAYS:
+        use_method = "Technical"
+    else:
+        use_method = "Early Stage"
+
+    if use_method == "Structural":
         method = "Structural"
         xs = [days_since(d) for d, _ in data]
         ys = [math.log10(p) for _, p in data]
@@ -364,7 +373,7 @@ def calculate_risk(history, inception_str):
             target_log = (slope * last_x + intercept) + (lower_band + rv * band_range)
             risk_price_map[round(rv, 3)] = round(10 ** target_log, 2)
 
-    elif days_history >= TECHNICAL_MIN_DAYS:
+    elif use_method == "Technical":
         method = "Technical"
         rsi_val = calculate_rsi(prices)
         bb_val  = calculate_bb_position(prices)
@@ -378,7 +387,7 @@ def calculate_risk(history, inception_str):
             full_risks.append(round(0.5*(r/100) + 0.5*b, 4))
 
     else:
-        method = "Early Stage"
+        method = "Early Stage"  # use_method == "Early Stage"
         mn_p, mx_p = min(prices), max(prices)
         current_risk = (prices[-1] - mn_p) / (mx_p - mn_p) if mx_p != mn_p else 0.5
         fair_value = deviation = None
@@ -527,7 +536,7 @@ def main():
             output["summary"]["unknown"] += 1
             continue
 
-        risk_data = calculate_risk(history, cfg["inception"])
+        risk_data = calculate_risk(history, cfg["inception"], ticker)
         if not risk_data:
             output["stocks"][ticker] = {
                 "name": cfg["name"], "ticker": ticker,
