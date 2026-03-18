@@ -13,6 +13,9 @@ import json, math, os, subprocess, time
 from datetime import date, datetime, timedelta
 import urllib.request, urllib.error
 
+# Alpha Vantage API key — set as GitHub Secret ALPHA_VANTAGE_KEY
+AV_KEY = os.environ.get("ALPHA_VANTAGE_KEY", "")
+
 # ── Sector mapping ─────────────────────────────────────────────────────────────
 SECTORS = {
     "MSFT": "Technology",       "AMZN": "Technology",      "NVDA": "Semiconductors",
@@ -177,25 +180,28 @@ def fetch_fundamentals(ticker):
 
     time.sleep(0.5)
 
-    # ── Step 2: Earnings via quoteSummary earningsHistory ───────────────
-    time.sleep(0.5)
-    for host in ["query1", "query2"]:
-        for crumb_attempt in range(2):
+    # ── Step 2: Earnings via Alpha Vantage (primary — reliable) ────────
+    time.sleep(0.3)
+    av_eh = fetch_eps_history_av(ticker)
+    if av_eh:
+        result["earnings_history"] = av_eh
+    else:
+        # ── Fallback: Yahoo earningsHistory ──────────────────────────────
+        time.sleep(0.5)
+        for host in ["query1", "query2"]:
             url = (f"https://{host}.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
-                   f"?modules=earningsHistory%2CearningsTrend")
+                   f"?modules=earningsHistory")
             try:
                 data = yahoo_get(url)
                 res  = data["quoteSummary"]["result"][0]
                 eh   = res.get("earningsHistory", {}).get("history", [])
                 if eh:
                     result["earnings_history"] = eh
-                    print(f"  ✅ earningsHistory ({host}): {len(eh)} quarters")
+                    print(f"  ✅ Yahoo earningsHistory ({host}): {len(eh)} quarters")
                     break
             except Exception as e:
-                print(f"  ⚠ earningsHistory ({host}): {e}")
+                print(f"  ⚠ Yahoo earningsHistory ({host}): {e}")
                 time.sleep(0.3)
-        if result["earnings_history"]:
-            break
 
     # ── Step 3: earningsHistory module fallback ──────────────────────────
     if not result["earnings_history"]:
@@ -270,6 +276,53 @@ def fetch_news(ticker):
         ]
     except Exception as e:
         print(f"  ⚠ News failed for {ticker}: {e}")
+        return []
+
+
+# ── Alpha Vantage EPS fetcher ─────────────────────────────────────────────────
+def fetch_eps_history_av(ticker):
+    """
+    Fetch quarterly EPS history from Alpha Vantage.
+    Returns list of {"quarter": {"raw": timestamp}, "epsActual": {"raw": float}}
+    Compatible with calculate_pe_history() format.
+    """
+    if not AV_KEY:
+        return []
+    # Alpha Vantage uses different ticker format for some stocks
+    av_ticker = ticker.replace(".TO", "").replace(".L", ".LON").replace("BRK-B", "BRK.B")
+    url = (f"https://www.alphavantage.co/query?function=EARNINGS"
+           f"&symbol={av_ticker}&apikey={AV_KEY}")
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read())
+
+        quarterly = data.get("quarterlyEarnings", [])
+        if not quarterly:
+            print(f"  ℹ AV: no quarterly earnings for {ticker}")
+            return []
+
+        eh = []
+        for q in quarterly:
+            try:
+                # AV date format: "2024-03-31"
+                q_date = date.fromisoformat(q["fiscalDateEnding"])
+                eps    = float(q.get("reportedEPS", 0) or 0)
+                if eps == 0:
+                    continue
+                eh.append({
+                    "quarter":   {"raw": int(q_date.strftime("%s"))},
+                    "epsActual": {"raw": eps},
+                })
+            except Exception:
+                continue
+
+        eh.sort(key=lambda x: x["quarter"]["raw"])
+        print(f"  ✅ AV earnings: {len(eh)} quarters for {ticker}")
+        return eh
+
+    except Exception as e:
+        print(f"  ⚠ AV earnings failed for {ticker}: {e}")
         return []
 
 
