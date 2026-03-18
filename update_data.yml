@@ -2,7 +2,7 @@ name: Update Dashboard Data
 
 on:
   schedule:
-    - cron: '30 21 * * 1-5'  # 9:30 PM UTC weekdays — after US market close
+    - cron: '30 21 * * 1-5'
   workflow_dispatch:
 
 permissions:
