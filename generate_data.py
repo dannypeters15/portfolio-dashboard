@@ -93,6 +93,7 @@ STOCK_LIST = {
     "ONDS":   {"name": "Ondas Holdings",         "inception": "2018-01-02", "allocation": 1},
     "SRFM":   {"name": "Surf Air Mobility",      "inception": "2023-07-27", "allocation": 1},
     "CCO":    {"name": "Clear Channel Outdoor",  "inception": "2005-11-11", "allocation": 1},
+    "MGY":    {"name": "Magnolia Oil & Gas",      "inception": "2018-07-19", "allocation": 2},
 }
 
 # Risk method thresholds (days of history required)
