@@ -143,140 +143,115 @@ def fetch_history(ticker):
 
 def fetch_fundamentals(ticker):
     """
-    Robust fundamentals fetch using Yahoo Finance v8 chart API for P/E
-    and quoteSummary for stats. The chart API is far more reliable for
-    earnings data as it's the same endpoint TradingView uses.
+    Fetch all fundamentals from Alpha Vantage OVERVIEW endpoint.
+    Returns market cap, PE, 52-week range, EPS, analyst targets etc.
+    Falls back to Yahoo for any missing fields.
     """
-    def val(d, k):
-        v = d.get(k)
-        return v.get("raw") if isinstance(v, dict) else v
-
     result = {"earnings_history": []}
 
-    # ── Step 1: Summary stats (market cap, 52wk, PE ratio) ──────────────
-    for host in ["query2", "query1"]:
-        url = (f"https://{host}.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
-               f"?modules=defaultKeyStatistics%2CsummaryDetail%2CfinancialData%2Cprice")
+    # AV uses slightly different ticker formats
+    av_ticker = (ticker
+        .replace(".TO", "")
+        .replace(".L",  "")
+        .replace("BRK-B", "BRK.B")
+        .replace("CCO.TO", "CCO"))
+
+    # ── Alpha Vantage OVERVIEW (primary for all fundamentals) ────────────
+    if AV_KEY:
+        url = (f"https://www.alphavantage.co/query?function=OVERVIEW"
+               f"&symbol={av_ticker}&apikey={AV_KEY}")
         try:
-            data = yahoo_get(url)
-            res  = data["quoteSummary"]["result"][0]
-            ks   = res.get("defaultKeyStatistics", {})
-            sd   = res.get("summaryDetail", {})
-            fd   = res.get("financialData", {})
-            pr   = res.get("price", {})
-            result.update({
-                "trailing_pe": val(ks,"trailingPE") or val(pr,"trailingPE"),
-                "forward_pe":  val(ks,"forwardPE"),
-                "market_cap":  val(sd,"marketCap") or val(pr,"marketCap"),
-                "week52_high": val(sd,"fiftyTwoWeekHigh"),
-                "week52_low":  val(sd,"fiftyTwoWeekLow"),
-                "ps_ratio":    val(sd,"priceToSalesTrailingTwelveMonths"),
-                "eps_ttm":     val(fd,"trailingEps") or val(ks,"trailingEps"),
-            })
-            print(f"  PE={result.get('trailing_pe','—')}  Cap={result.get('market_cap','—')}")
-            break
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                ov = json.loads(r.read())
+
+            if ov.get("Symbol"):
+                mc = ov.get("MarketCapitalization")
+                result.update({
+                    "trailing_pe":  float(ov["TrailingPE"])   if ov.get("TrailingPE")  not in (None,"None","-") else None,
+                    "forward_pe":   float(ov["ForwardPE"])    if ov.get("ForwardPE")   not in (None,"None","-") else None,
+                    "market_cap":   int(mc)                   if mc and mc not in ("None","-","0") else None,
+                    "week52_high":  float(ov["52WeekHigh"])   if ov.get("52WeekHigh")  not in (None,"None","-") else None,
+                    "week52_low":   float(ov["52WeekLow"])    if ov.get("52WeekLow")   not in (None,"None","-") else None,
+                    "ps_ratio":     float(ov["PriceToSalesRatioTTM"]) if ov.get("PriceToSalesRatioTTM") not in (None,"None","-") else None,
+                    "eps_ttm":      float(ov["DilutedEPSTTM"]) if ov.get("DilutedEPSTTM") not in (None,"None","-") else None,
+                    "beta":         float(ov["Beta"])          if ov.get("Beta")        not in (None,"None","-") else None,
+                    "analyst_target": float(ov["AnalystTargetPrice"]) if ov.get("AnalystTargetPrice") not in (None,"None","-") else None,
+                    "sector_av":    ov.get("Sector",""),
+                    "industry":     ov.get("Industry",""),
+                })
+                print(f"  ✅ AV Overview: PE={result.get('trailing_pe')} Cap={result.get('market_cap')}")
+            else:
+                print(f"  ⚠ AV Overview: no data for {av_ticker} (ETF or not listed)")
         except Exception as e:
-            print(f"  ⚠ Stats ({host}) failed: {e}")
-
-    time.sleep(0.5)
-
-    # ── Step 2: Earnings via Alpha Vantage (primary — reliable) ────────
-    time.sleep(0.3)
-    av_eh = fetch_eps_history_av(ticker)
-    if av_eh:
-        result["earnings_history"] = av_eh
-    else:
-        # ── Fallback: Yahoo earningsHistory ──────────────────────────────
+            print(f"  ⚠ AV Overview failed for {ticker}: {e}")
         time.sleep(0.5)
-        for host in ["query1", "query2"]:
-            url = (f"https://{host}.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
-                   f"?modules=earningsHistory")
-            try:
-                data = yahoo_get(url)
-                res  = data["quoteSummary"]["result"][0]
-                eh   = res.get("earningsHistory", {}).get("history", [])
-                if eh:
-                    result["earnings_history"] = eh
-                    print(f"  ✅ Yahoo earningsHistory ({host}): {len(eh)} quarters")
-                    break
-            except Exception as e:
-                print(f"  ⚠ Yahoo earningsHistory ({host}): {e}")
-                time.sleep(0.3)
 
-    # ── Step 3: earningsHistory module fallback ──────────────────────────
-    if not result["earnings_history"]:
-        time.sleep(0.4)
+    # ── Alpha Vantage EARNINGS (quarterly EPS history) ───────────────────
+    if AV_KEY:
+        url = (f"https://www.alphavantage.co/query?function=EARNINGS"
+               f"&symbol={av_ticker}&apikey={AV_KEY}")
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                ed = json.loads(r.read())
+
+            quarterly = ed.get("quarterlyEarnings", [])
+            eh = []
+            for q in quarterly:
+                try:
+                    q_date = date.fromisoformat(q["fiscalDateEnding"])
+                    eps    = q.get("reportedEPS", "None")
+                    if eps in (None, "None", "-", ""):
+                        continue
+                    eps = float(eps)
+                    if eps == 0:
+                        continue
+                    eh.append({
+                        "quarter":   {"raw": int(q_date.strftime("%s"))},
+                        "epsActual": {"raw": eps},
+                    })
+                except Exception:
+                    continue
+            if eh:
+                eh.sort(key=lambda x: x["quarter"]["raw"])
+                result["earnings_history"] = eh
+                print(f"  ✅ AV Earnings: {len(eh)} quarters")
+            else:
+                print(f"  ℹ AV Earnings: no quarterly data for {av_ticker}")
+        except Exception as e:
+            print(f"  ⚠ AV Earnings failed for {ticker}: {e}")
+        time.sleep(0.5)
+
+    # ── Yahoo fallback for EPS TTM if AV had no overview ────────────────
+    if not result.get("market_cap"):
         for host in ["query2", "query1"]:
             url = (f"https://{host}.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
-                   f"?modules=earningsHistory")
+                   f"?modules=defaultKeyStatistics%2CsummaryDetail%2Cprice")
             try:
                 data = yahoo_get(url)
                 res  = data["quoteSummary"]["result"][0]
-                eh   = res.get("earningsHistory", {}).get("history", [])
-                if eh:
-                    result["earnings_history"] = eh
-                    print(f"  ✅ earningsHistory module: {len(eh)} quarters")
+                def val(d, k):
+                    v = d.get(k)
+                    return v.get("raw") if isinstance(v, dict) else v
+                ks = res.get("defaultKeyStatistics", {})
+                sd = res.get("summaryDetail", {})
+                pr = res.get("price", {})
+                result.update({
+                    "trailing_pe":  result.get("trailing_pe") or val(ks,"trailingPE"),
+                    "forward_pe":   result.get("forward_pe")  or val(ks,"forwardPE"),
+                    "market_cap":   result.get("market_cap")  or val(sd,"marketCap") or val(pr,"marketCap"),
+                    "week52_high":  result.get("week52_high") or val(sd,"fiftyTwoWeekHigh"),
+                    "week52_low":   result.get("week52_low")  or val(sd,"fiftyTwoWeekLow"),
+                    "eps_ttm":      result.get("eps_ttm")     or val(ks,"trailingEps"),
+                })
+                if result.get("market_cap"):
+                    print(f"  ✅ Yahoo fallback: Cap={result['market_cap']}")
                     break
             except Exception as e:
-                print(f"  ⚠ earningsHistory ({host}) failed: {e}")
-
-    # ── Step 4: incomeStatementHistoryQuarterly deep fallback ────────────
-    if not result["earnings_history"]:
-        time.sleep(0.4)
-        url = (f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
-               f"?modules=incomeStatementHistoryQuarterly")
-        try:
-            data  = yahoo_get(url)
-            res   = data["quoteSummary"]["result"][0]
-            stmts = res.get("incomeStatementHistoryQuarterly",{}).get("incomeStatementHistory",[])
-            eh = []
-            for s in stmts:
-                q_date  = s.get("endDate", {})
-                eps_raw = s.get("dilutedEPS", {})
-                ni      = s.get("netIncome", {})
-                shares  = s.get("dilutedAverageShares", {})
-                if isinstance(q_date, dict):
-                    ts_val = q_date.get("raw", 0)
-                    # Use diluted EPS if available, else compute from net income / shares
-                    if isinstance(eps_raw, dict) and eps_raw.get("raw") is not None:
-                        eps = eps_raw["raw"]
-                    elif isinstance(ni, dict) and isinstance(shares, dict):
-                        ni_v = ni.get("raw", 0)
-                        sh_v = shares.get("raw", 1)
-                        eps  = ni_v / sh_v if sh_v else None
-                    else:
-                        eps = None
-                    if eps is not None and ts_val:
-                        eh.append({"quarter":{"raw":ts_val},"epsActual":{"raw":float(eps)}})
-            if eh:
-                result["earnings_history"] = sorted(eh, key=lambda x: x["quarter"]["raw"])
-                print(f"  ✅ Income stmt fallback: {len(eh)} quarters")
-        except Exception as e:
-            print(f"  ⚠ Income stmt fallback failed: {e}")
-
-    if not result["earnings_history"]:
-        print(f"  ℹ No earnings history found for {ticker} — P/E chart will be unavailable")
+                print(f"  ⚠ Yahoo fallback ({host}): {e}")
 
     return result
-
-
-def fetch_news(ticker):
-    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}&newsCount=3&enableFuzzyQuery=false"
-    try:
-        data = yahoo_get(url)
-        items = data.get("news", [])
-        return [
-            {
-                "title":     i.get("title", ""),
-                "url":       i.get("link", ""),
-                "publisher": i.get("publisher", ""),
-                "date":      i.get("providerPublishTime", 0),
-            }
-            for i in items[:3]
-        ]
-    except Exception as e:
-        print(f"  ⚠ News failed for {ticker}: {e}")
-        return []
 
 
 # ── Alpha Vantage EPS fetcher ─────────────────────────────────────────────────
@@ -605,19 +580,22 @@ def main():
         def v(k): return fundamentals.get(k)
 
         output["stocks"][ticker] = {
-            "name":        cfg["name"],
-            "ticker":      ticker,
-            "allocation":  cfg["allocation"],
-            "sector":      sector,
-            "trailing_pe": v("trailing_pe"),
-            "forward_pe":  v("forward_pe"),
-            "market_cap":  v("market_cap"),
-            "week52_high": v("week52_high"),
-            "week52_low":  v("week52_low"),
-            "ps_ratio":    v("ps_ratio"),
-            "pe_history":  pe_hist,
-            "news":        news,
-            "last_updated": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "name":           cfg["name"],
+            "ticker":         ticker,
+            "allocation":     cfg["allocation"],
+            "sector":         sector,
+            "trailing_pe":    v("trailing_pe"),
+            "forward_pe":     v("forward_pe"),
+            "market_cap":     v("market_cap"),
+            "week52_high":    v("week52_high"),
+            "week52_low":     v("week52_low"),
+            "ps_ratio":       v("ps_ratio"),
+            "beta":           v("beta"),
+            "analyst_target": v("analyst_target"),
+            "industry":       v("industry"),
+            "pe_history":     pe_hist,
+            "news":           news,
+            "last_updated":   datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
             **risk_data,
         }
 
