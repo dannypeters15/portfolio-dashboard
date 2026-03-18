@@ -142,6 +142,25 @@ def fetch_history(ticker):
         return []
 
 
+def fetch_news(ticker):
+    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}&newsCount=3&enableFuzzyQuery=false"
+    try:
+        data = yahoo_get(url)
+        items = data.get("news", [])
+        return [
+            {
+                "title":     i.get("title", ""),
+                "url":       i.get("link", ""),
+                "publisher": i.get("publisher", ""),
+                "date":      i.get("providerPublishTime", 0),
+            }
+            for i in items[:3]
+        ]
+    except Exception as e:
+        print(f"  ⚠ News failed for {ticker}: {e}")
+        return []
+
+
 def fetch_fundamentals(ticker):
     """
     Fetch all fundamentals from Alpha Vantage OVERVIEW endpoint.
