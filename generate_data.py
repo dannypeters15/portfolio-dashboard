@@ -161,103 +161,131 @@ def fetch_news(ticker):
         return []
 
 
-# Stocks to use AV for P/E history (max 20 = within free tier 25/day limit)
-AV_PE_TICKERS = {
+# All stocks split into two batches — alternate each day to stay within AV free tier (25/day)
+# Batch A = odd days, Batch B = even days. Each batch ≤ 27 stocks.
+# AV OVERVIEW rotation — 54 stocks split into 3 daily batches of 18
+# Day mod 3 == 0 → batch 0 (stocks 0-17)
+# Day mod 3 == 1 → batch 1 (stocks 18-35)  
+# Day mod 3 == 2 → batch 2 (stocks 36-53)
+_ALL_TICKERS_ORDERED = [
+    "MSFT","AMZN","NVDA","META","AAPL","GOOG","IBM","ADBE",
+    "ORCL","PLTR","SHOP","PATH","CSCO","AVGO","AMD","INTC","NFLX","SPOT",
+    "TSLA","COST","WMT","TGT","BABA","SONY","TTWO","JPM","BRK-B","BLK",
+    "HOOD","IFC.TO","TMUS","CVX","DVN","URA","UEC","CCO.TO",
+    "UUUU","MP","USAR","ALB","LAC","AG","MSTR","IREN","BMNR","APLD",
+    "AVAV","RR.L","XPEV","RIVN","ONDS","SRFM","CCO","MGY"
+]
+_day_mod = datetime.utcnow().day % 3
+_av_batch_start = _day_mod * 18
+_av_batch_today = set(_ALL_TICKERS_ORDERED[_av_batch_start:_av_batch_start + 18])
+
+
+def fetch_news(ticker):
+    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}&newsCount=3&enableFuzzyQuery=false"
+    try:
+        data = yahoo_get(url)
+        items = data.get("news", [])
+        return [
+            {
+                "title":     i.get("title", ""),
+                "url":       i.get("link", ""),
+                "publisher": i.get("publisher", ""),
+                "date":      i.get("providerPublishTime", 0),
+            }
+            for i in items[:3]
+        ]
+    except Exception as e:
+        print(f"  ⚠ News failed for {ticker}: {e}")
+        return []
+
+
+# All stocks split into two batches — alternate each day to stay within AV free tier (25/day)
+# Batch A = odd days, Batch B = even days. Each batch ≤ 27 stocks.
+AV_BATCH_A = [
     "MSFT","AMZN","AAPL","NVDA","META","GOOG","NFLX","TSLA",
     "ORCL","PLTR","SHOP","AVGO","AMD","INTC","JPM","BLK",
-    "COST","WMT","IBM","ADBE"
-}
+    "COST","WMT","IBM","ADBE","CSCO","CVX","DVN","TMUS",
+    "MSTR","URA","CCO"
+]
+AV_BATCH_B = [
+    "NFLX","TGT","BABA","SONY","TTWO","HOOD","IFC.TO","SPOT",
+    "UEC","CCO.TO","UUUU","MP","ALB","LAC","AG","AVAV","RR.L",
+    "XPEV","RIVN","IREN","BMNR","APLD","ONDS","SRFM","USAR","MGY","PATH"
+]
+
+# Today's batch — odd day = A, even day = B
+_today_batch = set(AV_BATCH_A if datetime.utcnow().day % 2 == 1 else AV_BATCH_B)
 
 def fetch_fundamentals(ticker):
     """
-    Fetch fundamentals using Yahoo Finance for stats (market cap, PE, 52wk)
-    and Alpha Vantage EARNINGS for quarterly P/E history chart.
-    AV is limited to top 20 stocks to stay within free tier (25 calls/day).
+    Fetch fundamentals via Alpha Vantage OVERVIEW.
+    Rotates through all 54 stocks in 3 daily batches of 18
+    to stay within the 25 calls/day free tier limit.
+    Stocks not in today's batch reuse the cached values from data.json.
     """
-    result = {"earnings_history": []}
+    result = {
+        "trailing_pe": None, "forward_pe": None, "market_cap": None,
+        "week52_high": None, "week52_low": None, "ps_ratio": None,
+        "eps_ttm": None, "beta": None, "analyst_target": None,
+        "industry": None, "earnings_history": [],
+    }
 
-    def val(d, k):
-        v = d.get(k)
-        return v.get("raw") if isinstance(v, dict) else v
+    if not AV_KEY:
+        print(f"  ⚠ No AV key — skipping fundamentals for {ticker}")
+        return result
 
-    # ── Yahoo Finance for all stats (market cap, PE, 52wk, beta etc) ─────
-    # Using v7/quote endpoint which is more reliable than quoteSummary
-    for host in ["query1", "query2"]:
-        url = f"https://{host}.finance.yahoo.com/v7/finance/quote?symbols={ticker}"
-        try:
-            data = yahoo_get(url)
-            q = data["quoteResponse"]["result"]
-            if not q:
-                continue
-            q = q[0]
-            result.update({
-                "trailing_pe":    q.get("trailingPE"),
-                "forward_pe":     q.get("forwardPE"),
-                "market_cap":     q.get("marketCap"),
-                "week52_high":    q.get("fiftyTwoWeekHigh"),
-                "week52_low":     q.get("fiftyTwoWeekLow"),
-                "ps_ratio":       q.get("priceToSalesTrailing12Months"),
-                "eps_ttm":        q.get("epsTrailingTwelveMonths"),
-                "beta":           q.get("beta"),
-                "analyst_target": q.get("targetMeanPrice"),
-                "industry":       q.get("industry",""),
-            })
-            print(f"  ✅ Yahoo v7: PE={result.get('trailing_pe')} Cap={result.get('market_cap')}")
-            break
-        except Exception as e:
-            print(f"  ⚠ Yahoo v7 ({host}): {e}")
-    time.sleep(0.3)
-
-    # ── Alpha Vantage EARNINGS for P/E history (top 20 stocks only) ──────
     av_ticker = (ticker
         .replace(".TO","").replace(".L","")
         .replace("BRK-B","BRK.B").replace("CCO.TO","CCO"))
 
-    if AV_KEY and ticker in AV_PE_TICKERS:
-        url = (f"https://www.alphavantage.co/query?function=EARNINGS"
-               f"&symbol={av_ticker}&apikey={AV_KEY}")
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=20) as r:
-                ed = json.loads(r.read())
+    if ticker not in _av_batch_today:
+        print(f"  ℹ {ticker} not in today's AV batch (day mod 3 = {_day_mod}) — using cached")
+        return None  # None = caller should keep existing cached values
 
-            # Check for API limit message
-            if "Information" in ed or "Note" in ed:
-                print(f"  ⚠ AV rate limit hit for {ticker}: {ed.get('Information') or ed.get('Note','')}")
-            else:
-                quarterly = ed.get("quarterlyEarnings", [])
-                eh = []
-                for q in quarterly:
-                    try:
-                        q_date = date.fromisoformat(q["fiscalDateEnding"])
-                        eps    = q.get("reportedEPS","None")
-                        if eps in (None,"None","-",""):
-                            continue
-                        eps = float(eps)
-                        if eps == 0:
-                            continue
-                        eh.append({
-                            "quarter":   {"raw": int(datetime.combine(q_date, datetime.min.time()).timestamp())},
-                            "epsActual": {"raw": eps},
-                        })
-                    except Exception:
-                        continue
-                if eh:
-                    eh.sort(key=lambda x: x["quarter"]["raw"])
-                    result["earnings_history"] = eh
-                    print(f"  ✅ AV Earnings: {len(eh)} quarters")
-                else:
-                    print(f"  ℹ AV: no EPS data for {av_ticker}")
-        except Exception as e:
-            print(f"  ⚠ AV Earnings failed for {ticker}: {e}")
-        time.sleep(0.5)
-    elif ticker not in AV_PE_TICKERS:
-        print(f"  ℹ {ticker} not in AV PE list — skipping earnings fetch")
+    url = (f"https://www.alphavantage.co/query?function=OVERVIEW"
+           f"&symbol={av_ticker}&apikey={AV_KEY}")
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            ov = json.loads(r.read())
 
+        if "Information" in ov or "Note" in ov:
+            print(f"  ⚠ AV rate limit: {ov.get('Information') or ov.get('Note','')[:80]}")
+            return result
+
+        if not ov.get("Symbol"):
+            print(f"  ℹ AV: no overview for {av_ticker} (ETF/unlisted)")
+            return result
+
+        def av_float(k):
+            v = ov.get(k)
+            try:
+                return float(v) if v and v not in ("None","-","0","") else None
+            except (ValueError, TypeError):
+                return None
+
+        mc = ov.get("MarketCapitalization","0")
+        result.update({
+            "trailing_pe":    av_float("TrailingPE"),
+            "forward_pe":     av_float("ForwardPE"),
+            "market_cap":     int(mc) if mc and mc not in ("None","-","0","") else None,
+            "week52_high":    av_float("52WeekHigh"),
+            "week52_low":     av_float("52WeekLow"),
+            "ps_ratio":       av_float("PriceToSalesRatioTTM"),
+            "eps_ttm":        av_float("DilutedEPSTTM"),
+            "beta":           av_float("Beta"),
+            "analyst_target": av_float("AnalystTargetPrice"),
+            "industry":       ov.get("Industry","") or None,
+        })
+        print(f"  ✅ AV Overview: PE={result['trailing_pe']} Cap={result['market_cap']} Beta={result['beta']}")
+
+    except Exception as e:
+        print(f"  ⚠ AV Overview failed for {ticker}: {e}")
+
+    time.sleep(0.5)
     return result
 
 
-# ── Alpha Vantage EPS fetcher ─────────────────────────────────────────────────
 def fetch_eps_history_av(ticker):
     """
     Fetch quarterly EPS history from Alpha Vantage.
@@ -542,7 +570,25 @@ def main():
     print(f"\n{'='*60}")
     print(f"Portfolio Dashboard v2 — Data Update")
     print(f"{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"AV Batch: day mod 3 = {_day_mod} — {len(_av_batch_today)} stocks refreshing fundamentals today")
+    print(f"Batch tickers: {sorted(_av_batch_today)}")
     print(f"{'='*60}\n")
+
+    # Load existing data.json to preserve cached fundamentals for stocks
+    # not in today's AV batch
+    cached = {}
+    try:
+        with open("data.json") as f:
+            old = json.load(f)
+            for t, s in old.get("stocks", {}).items():
+                cached[t] = {k: s.get(k) for k in (
+                    "trailing_pe","forward_pe","market_cap","week52_high",
+                    "week52_low","ps_ratio","eps_ttm","beta","analyst_target",
+                    "industry","pe_history","earnings_history"
+                )}
+        print(f"Loaded cached fundamentals for {len(cached)} stocks")
+    except Exception:
+        print("No existing data.json — fresh run")
 
     output = {
         "generated": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -556,8 +602,13 @@ def main():
         sector = SECTORS.get(ticker, "Other")
 
         history      = fetch_history(ticker);      time.sleep(0.3)
-        fundamentals = fetch_fundamentals(ticker); time.sleep(0.3)
+        fund_result  = fetch_fundamentals(ticker); time.sleep(0.3)
         news         = fetch_news(ticker);         time.sleep(0.2)
+        # None = not in today's batch, use cached values
+        if fund_result is None:
+            fundamentals = cached.get(ticker, {})
+        else:
+            fundamentals = fund_result
 
         if not history:
             output["stocks"][ticker] = {
@@ -578,7 +629,11 @@ def main():
             output["summary"]["unknown"] += 1
             continue
 
-        pe_hist = calculate_pe_history(history, fundamentals)
+        # Use cached pe_history if not refreshed today
+        if fund_result is None and cached.get(ticker, {}).get("pe_history"):
+            pe_hist = cached[ticker]["pe_history"]
+        else:
+            pe_hist = calculate_pe_history(history, fundamentals)
 
         def v(k): return fundamentals.get(k)
 
