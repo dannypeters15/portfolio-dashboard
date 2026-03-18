@@ -79,7 +79,7 @@ STOCK_LIST = {
     "ALB":    {"name": "Albemarle",              "inception": "1994-02-28", "allocation": 2},
     "LAC":    {"name": "Lithium Americas",       "inception": "2020-09-01", "allocation": 2},
     "AG":     {"name": "First Majestic Silver",  "inception": "2011-05-10", "allocation": 2},
-    "MSTR":   {"name": "MicroStrategy",          "inception": "1998-06-11", "allocation": 2},
+    "MSTR":   {"name": "MicroStrategy",          "inception": "2020-08-11", "allocation": 2},  # Bitcoin strategy pivot
     "IREN":   {"name": "Iris Energy",            "inception": "2021-11-18", "allocation": 2},
     "BMNR":   {"name": "Bitmine Immersion",      "inception": "2022-06-01", "allocation": 2},
     "APLD":   {"name": "Applied Digital",        "inception": "2022-04-01", "allocation": 2},
@@ -109,6 +109,7 @@ METHOD_OVERRIDES = {
     "IBM":   "Technical",   # Structural decline since 2010 distorts regression
     "BABA":  "Technical",   # Chinese ADR, political risk distorts trend
     "CCO":   "Technical",   # Heavily debt-laden, regression unreliable
+    "MSTR":  "Technical",   # Pre-2020 software co history irrelevant to Bitcoin proxy
 }
 
 
