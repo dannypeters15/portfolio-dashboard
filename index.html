@@ -351,6 +351,22 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
 .overlay-wrap{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:150;align-items:center;justify-content:center;padding:1rem}
 .overlay-wrap.open{display:flex}
 
+/* ── Accumulate Zone Pie ──────────────────────────────────────────────────────*/
+.accum-pie-wrap{display:grid;grid-template-columns:200px 1fr;gap:1.5rem;align-items:center}
+.accum-pie-canvas{width:200px;height:200px;position:relative}
+.accum-legend-list{display:flex;flex-direction:column;gap:.5rem;overflow-y:auto;max-height:220px}
+.accum-legend-item{display:flex;align-items:center;gap:.6rem;font-size:.7rem;cursor:pointer;padding:.25rem .4rem;border-radius:4px;transition:background .15s}
+.accum-legend-item:hover{background:var(--surface2)}
+.accum-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.accum-ticker{font-weight:700;font-family:"JetBrains Mono",monospace;min-width:50px}
+.accum-risk{font-family:"JetBrains Mono",monospace;color:var(--green);min-width:40px}
+.accum-pct{font-family:"JetBrains Mono",monospace;color:var(--muted);margin-left:auto}
+.accum-center-label{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
+.accum-center-count{font-size:1.4rem;font-weight:800;color:var(--green);font-family:"JetBrains Mono",monospace;line-height:1}
+.accum-center-text{font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:.2rem}
+.accum-empty{text-align:center;padding:2rem;color:var(--muted);font-size:.75rem}
+.accum-note{font-size:.62rem;color:var(--muted);margin-top:.7rem;line-height:1.6}
+
 /* ── Responsive ───────────────────────────────────────────────────────────────*/
 @media(max-width:900px){
   .summary-grid{grid-template-columns:repeat(2,1fr)}
@@ -496,6 +512,36 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
     <div class="buy-signals">
       <div class="section-title">Active Buy Signals <span>risk ≤ 0.35</span></div>
       <div class="signal-grid" id="signal-grid"></div>
+    </div>
+
+    <!-- Accumulate Zone Allocation Pie -->
+    <div style="margin-top:1.5rem">
+      <div class="section-title">
+        Accumulate Zone — Suggested Allocation
+        <span>risk-weighted · updates as stocks enter/exit zone</span>
+      </div>
+      <div class="card" style="padding:1.2rem" id="accum-pie-section">
+        <div class="accum-empty" id="accum-empty">No stocks currently in the accumulate zone (risk ≤ 0.35)</div>
+        <div id="accum-pie-content" style="display:none">
+          <div class="accum-pie-wrap">
+            <div style="position:relative">
+              <canvas id="accum-pie-chart" width="200" height="200"></canvas>
+              <div class="accum-center-label">
+                <div class="accum-center-count" id="accum-count">0</div>
+                <div class="accum-center-text">stocks</div>
+              </div>
+            </div>
+            <div>
+              <div class="accum-legend-list" id="accum-legend"></div>
+              <div class="accum-note">
+                Allocation weighted by <strong style="color:var(--text)">inverse risk</strong> — lower risk score = higher suggested weight.<br>
+                Based on £<input type="number" id="accum-deploy-amount" value="1000" min="1" style="width:70px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:.15rem .35rem;border-radius:3px;font-size:.68rem;font-family:inherit"> to deploy.
+                <button onclick="buildAccumPie()" style="background:var(--accent2);color:#fff;border:none;padding:.2rem .5rem;border-radius:3px;font-size:.62rem;font-family:inherit;cursor:pointer;margin-left:.3rem">Recalculate</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -832,6 +878,7 @@ async function loadDashboard() {
     renderTable();
     buildPieChart();
     renderSignals(data);
+    buildAccumPie();
     populateFilters(data);
     populateIdeaTickers(data);
     populateSearch(data);
@@ -1713,6 +1760,93 @@ async function submitIdea() {
 function openLightbox(src) {
   document.getElementById('lb-img').src = src;
   document.getElementById('lightbox').classList.add('open');
+}
+
+// ── Accumulate Zone Pie ───────────────────────────────────────────────────────
+let accumPieChart = null;
+
+function buildAccumPie() {
+  if (!G.data) return;
+
+  const stocks = Object.values(G.data.stocks)
+    .filter(s => !s.error && s.risk != null && s.risk <= 0.35)
+    .sort((a, b) => a.risk - b.risk);
+
+  const emptyEl   = document.getElementById('accum-empty');
+  const contentEl = document.getElementById('accum-pie-content');
+  const countEl   = document.getElementById('accum-count');
+
+  if (!stocks.length) {
+    emptyEl.style.display   = 'block';
+    contentEl.style.display = 'none';
+    return;
+  }
+
+  emptyEl.style.display   = 'none';
+  contentEl.style.display = 'block';
+  countEl.textContent     = stocks.length;
+
+  const deployAmount = parseFloat(document.getElementById('accum-deploy-amount')?.value) || 1000;
+
+  // Weight = allocation% * (1 - risk)^2  — heavier inverse weighting
+  const raw    = stocks.map(s => s.allocation * Math.pow(1 - s.risk, 2));
+  const total  = raw.reduce((a, b) => a + b, 0);
+  const pcts   = raw.map(v => (v / total) * 100);
+  const amounts= raw.map(v => (v / total) * deployAmount);
+
+  // Colour palette — shades of green for accumulate zone
+  const palette = [
+    '#4ade80','#22c55e','#16a34a','#15803d','#166534',
+    '#86efac','#bbf7d0','#6ee7b7','#34d399','#10b981',
+    '#059669','#047857','#065f46','#064e3b','#a7f3d0',
+  ];
+
+  if (accumPieChart) accumPieChart.destroy();
+
+  const ctx = document.getElementById('accum-pie-chart').getContext('2d');
+  accumPieChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: stocks.map(s => s.ticker),
+      datasets: [{
+        data:            pcts.map(p => parseFloat(p.toFixed(1))),
+        backgroundColor: stocks.map((_, i) => palette[i % palette.length]),
+        borderColor:     'var(--bg)',
+        borderWidth:     2,
+        hoverOffset:     6,
+      }]
+    },
+    options: {
+      responsive: false,
+      animation: { duration: 400 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const s = stocks[ctx.dataIndex];
+              return [
+                ctx.label + ': ' + ctx.parsed.toFixed(1) + '%',
+                'Risk: ' + s.risk.toFixed(3),
+                'Deploy: £' + amounts[ctx.dataIndex].toFixed(0),
+              ];
+            }
+          }
+        }
+      },
+      cutout: '55%',
+    }
+  });
+
+  // Legend
+  document.getElementById('accum-legend').innerHTML = stocks.map((s, i) => `
+    <div class="accum-legend-item" onclick="openStockModal('${s.ticker}')">
+      <div class="accum-dot" style="background:${palette[i % palette.length]}"></div>
+      <span class="accum-ticker" style="color:${riskColor(s.risk)}">${s.ticker}</span>
+      <span class="accum-risk">${s.risk.toFixed(3)}</span>
+      <span style="font-size:.65rem;color:var(--text2);flex:1">${s.name}</span>
+      <span class="accum-pct">${pcts[i].toFixed(1)}% · £${amounts[i].toFixed(0)}</span>
+    </div>`).join('');
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────
