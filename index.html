@@ -367,6 +367,37 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
 .accum-empty{text-align:center;padding:2rem;color:var(--muted);font-size:.75rem}
 .accum-note{font-size:.62rem;color:var(--muted);margin-top:.7rem;line-height:1.6}
 
+
+/* ── Risk Gauge ───────────────────────────────────────────────────────────────*/
+.gauge-wrap{display:flex;flex-direction:column;align-items:center;gap:.3rem}
+.gauge-svg{overflow:visible}
+.gauge-label{font-size:.58rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
+.gauge-value{font-size:1.4rem;font-weight:800;font-family:"JetBrains Mono",monospace;line-height:1}
+.gauge-zone{font-size:.6rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.dashboard-gauge-row{display:flex;align-items:center;justify-content:center;gap:2.5rem;padding:1rem 1.5rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:1.5rem;box-shadow:var(--shadow-sm)}
+.dash-gauge-item{display:flex;flex-direction:column;align-items:center;gap:.2rem}
+.dash-gauge-label{font-size:.58rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
+
+/* ── Time in Risk Bands ──────────────────────────────────────────────────────*/
+.risk-bands-wrap{display:grid;grid-template-columns:1fr 160px;gap:1rem;align-items:start}
+.risk-bands-chart-box{height:160px;position:relative}
+.risk-bands-legend{display:flex;flex-direction:column;gap:.4rem;font-size:.65rem}
+.risk-bands-legend-item{display:flex;align-items:center;gap:.4rem}
+.rbl-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+.rbl-label{color:var(--muted)}
+.rbl-pct{font-family:"JetBrains Mono",monospace;font-weight:600;margin-left:auto}
+
+/* ── Monthly Returns Heatmap ─────────────────────────────────────────────────*/
+.monthly-heatmap{overflow-x:auto}
+.monthly-grid{display:grid;gap:2px;width:max-content}
+.month-cell{width:32px;height:22px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:600;font-family:"JetBrains Mono",monospace;cursor:default;transition:opacity .15s;position:relative}
+.month-cell:hover{opacity:.8;z-index:1}
+.month-header{width:32px;text-align:center;font-size:.5rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.year-label{font-size:.58rem;color:var(--muted);font-family:"JetBrains Mono",monospace;font-weight:600;display:flex;align-items:center;justify-content:flex-end;padding-right:.4rem;width:36px}
+.heatmap-row{display:flex;align-items:center;gap:2px}
+.heatmap-legend-row{display:flex;align-items:center;gap:1rem;margin-top:.6rem;font-size:.58rem;color:var(--muted)}
+.heatmap-legend-swatch{display:flex;gap:2px}
+.heatmap-legend-swatch div{width:14px;height:8px;border-radius:1px}
 /* ── Responsive ───────────────────────────────────────────────────────────────*/
 @media(max-width:900px){
   .summary-grid{grid-template-columns:repeat(2,1fr)}
@@ -416,6 +447,15 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
   <!-- Dashboard Tab -->
   <div class="tab-panel active" id="tab-dashboard">
     <div class="summary-grid" id="summary-grid"></div>
+    <div class="dashboard-gauge-row" id="dashboard-gauge-row" style="display:none">
+      <div class="dash-gauge-item">
+        <svg class="gauge-svg" id="dash-gauge-svg" width="160" height="90" viewBox="0 0 160 90"></svg>
+        <div class="dash-gauge-label">Avg Portfolio Risk</div>
+      </div>
+      <div style="width:1px;background:var(--border);height:70px"></div>
+      <div id="dash-gauge-stats" style="display:flex;flex-direction:column;gap:.5rem;font-size:.72rem"></div>
+    </div>
+
     <div id="spotlight-section">
       <div class="section-title">Buy Zone Opportunities</div>
       <div class="spotlight-row" id="spotlight-row"></div>
@@ -640,6 +680,34 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
         <div class="section-title">Technical Indicators</div>
         <div class="indicators-row" id="m-indicators"></div>
       </div>
+      <!-- Risk Gauge -->
+      <div>
+        <div class="section-title">Risk Gauge</div>
+        <div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap">
+          <div class="gauge-wrap">
+            <svg class="gauge-svg" id="m-gauge-svg" width="200" height="115" viewBox="0 0 200 115"></svg>
+            <div id="m-gauge-value" class="gauge-value"></div>
+            <div id="m-gauge-zone" class="gauge-zone"></div>
+          </div>
+          <div id="m-gauge-context" style="flex:1;min-width:160px;font-size:.68rem;color:var(--muted);line-height:1.9"></div>
+        </div>
+      </div>
+
+      <!-- Time in Risk Bands -->
+      <div>
+        <div class="section-title">Time Spent in Risk Bands <span>% of trading days at each risk level</span></div>
+        <div class="risk-bands-wrap">
+          <div class="risk-bands-chart-box"><canvas id="m-bands-chart"></canvas></div>
+          <div class="risk-bands-legend" id="m-bands-legend"></div>
+        </div>
+      </div>
+
+      <!-- Monthly Returns Heatmap -->
+      <div>
+        <div class="section-title">Monthly Returns Heatmap <span>green = positive · red = negative</span></div>
+        <div class="monthly-heatmap" id="m-monthly-heatmap"></div>
+      </div>
+
       <!-- Multi-year returns -->
       <div>
         <div class="section-title">Historical Returns</div>
@@ -872,6 +940,7 @@ async function loadDashboard() {
       d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) + ' UTC';
 
     renderSummary(data);
+    renderDashboardGauge(data);
     renderSpotlight(data);
     renderHeatmap(data);
     checkCorrelations(data);
@@ -1268,6 +1337,15 @@ function openStockModal(ticker) {
 
   // Risk price table
   renderRiskPriceTable(s);
+
+  // Risk gauge
+  renderModalGauge(s);
+
+  // Time in risk bands
+  renderRiskBands(s);
+
+  // Monthly returns heatmap
+  renderMonthlyHeatmap(s);
 
   // Charts
   buildModalCharts(s);
@@ -1760,6 +1838,335 @@ async function submitIdea() {
 function openLightbox(src) {
   document.getElementById('lb-img').src = src;
   document.getElementById('lightbox').classList.add('open');
+}
+
+// ── Risk Gauge ────────────────────────────────────────────────────────────────
+function drawGauge(svgEl, risk, w, h) {
+  if (!svgEl) return;
+  svgEl.innerHTML = '';
+
+  const cx = w / 2, cy = h * 0.88;
+  const r  = Math.min(w, h * 1.9) * 0.44;
+  const rN = r * 0.62;  // needle length
+
+  // Arc segments: green → yellow → orange → red
+  const segments = [
+    { from: 0,    to: 0.35, color: '#4ade80' },
+    { from: 0.35, to: 0.65, color: '#fbbf24' },
+    { from: 0.65, to: 0.85, color: '#fb923c' },
+    { from: 0.85, to: 1.0,  color: '#f87171' },
+  ];
+
+  function riskToAngle(v) {
+    // 0 = 180deg (left), 1 = 0deg (right), sweeping left to right
+    return Math.PI - v * Math.PI;
+  }
+
+  function arcPath(v1, v2, rOuter, rInner) {
+    const a1 = riskToAngle(v1), a2 = riskToAngle(v2);
+    const x1o = cx + rOuter * Math.cos(a1), y1o = cy - rOuter * Math.sin(a1);
+    const x2o = cx + rOuter * Math.cos(a2), y2o = cy - rOuter * Math.sin(a2);
+    const x1i = cx + rInner * Math.cos(a1), y1i = cy - rInner * Math.sin(a1);
+    const x2i = cx + rInner * Math.cos(a2), y2i = cy - rInner * Math.sin(a2);
+    const large = (v2 - v1) > 0.5 ? 1 : 0;
+    return [
+      'M', x1o, y1o,
+      'A', rOuter, rOuter, 0, large, 0, x2o, y2o,
+      'L', x2i, y2i,
+      'A', rInner, rInner, 0, large, 1, x1i, y1i,
+      'Z'
+    ].join(' ');
+  }
+
+  const ns = 'http://www.w3.org/2000/svg';
+
+  // Background arc
+  const bg = document.createElementNS(ns, 'path');
+  bg.setAttribute('d', arcPath(0, 1, r, r * 0.72));
+  bg.setAttribute('fill', 'var(--surface2)');
+  svgEl.appendChild(bg);
+
+  // Coloured segments
+  segments.forEach(seg => {
+    const p = document.createElementNS(ns, 'path');
+    p.setAttribute('d', arcPath(seg.from, seg.to, r, r * 0.72));
+    p.setAttribute('fill', seg.color);
+    p.setAttribute('opacity', '0.85');
+    svgEl.appendChild(p);
+  });
+
+  // Tick marks at 0, 0.25, 0.5, 0.75, 1.0
+  [0, 0.25, 0.5, 0.75, 1.0].forEach(v => {
+    const a = riskToAngle(v);
+    const x1 = cx + (r * 0.73) * Math.cos(a);
+    const y1 = cy - (r * 0.73) * Math.sin(a);
+    const x2 = cx + (r * 1.02) * Math.cos(a);
+    const y2 = cy - (r * 1.02) * Math.sin(a);
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+    line.setAttribute('stroke', 'var(--surface)');
+    line.setAttribute('stroke-width', '1.5');
+    svgEl.appendChild(line);
+
+    // Labels
+    const lx = cx + (r * 1.14) * Math.cos(a);
+    const ly = cy - (r * 1.14) * Math.sin(a);
+    const txt = document.createElementNS(ns, 'text');
+    txt.setAttribute('x', lx); txt.setAttribute('y', ly);
+    txt.setAttribute('text-anchor', 'middle');
+    txt.setAttribute('dominant-baseline', 'middle');
+    txt.setAttribute('font-size', w > 150 ? '9' : '7');
+    txt.setAttribute('fill', 'var(--muted)');
+    txt.setAttribute('font-family', 'JetBrains Mono, monospace');
+    txt.textContent = v.toFixed(2);
+    svgEl.appendChild(txt);
+  });
+
+  // Needle
+  if (risk != null) {
+    const angle = riskToAngle(Math.max(0, Math.min(1, risk)));
+    const nx = cx + rN * Math.cos(angle);
+    const ny = cy - rN * Math.sin(angle);
+
+    // Shadow
+    const needleShadow = document.createElementNS(ns, 'line');
+    needleShadow.setAttribute('x1', cx); needleShadow.setAttribute('y1', cy);
+    needleShadow.setAttribute('x2', nx + 1); needleShadow.setAttribute('y2', ny + 1);
+    needleShadow.setAttribute('stroke', 'rgba(0,0,0,.3)');
+    needleShadow.setAttribute('stroke-width', w > 150 ? '3' : '2');
+    needleShadow.setAttribute('stroke-linecap', 'round');
+    svgEl.appendChild(needleShadow);
+
+    const needle = document.createElementNS(ns, 'line');
+    needle.setAttribute('x1', cx); needle.setAttribute('y1', cy);
+    needle.setAttribute('x2', nx); needle.setAttribute('y2', ny);
+    needle.setAttribute('stroke', '#fff');
+    needle.setAttribute('stroke-width', w > 150 ? '2.5' : '1.8');
+    needle.setAttribute('stroke-linecap', 'round');
+    svgEl.appendChild(needle);
+
+    // Centre dot
+    const dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('cx', cx); dot.setAttribute('cy', cy);
+    dot.setAttribute('r', w > 150 ? '5' : '3.5');
+    dot.setAttribute('fill', '#fff');
+    svgEl.appendChild(dot);
+  }
+}
+
+function renderModalGauge(s) {
+  const svgEl = document.getElementById('m-gauge-svg');
+  drawGauge(svgEl, s.risk, 200, 115);
+
+  const valEl  = document.getElementById('m-gauge-value');
+  const zoneEl = document.getElementById('m-gauge-zone');
+  if (valEl)  { valEl.textContent  = s.risk != null ? s.risk.toFixed(3) : '—'; valEl.style.color = riskColor(s.risk); }
+  if (zoneEl) { zoneEl.textContent = s.zone || ''; zoneEl.style.color = riskColor(s.risk); }
+
+  const ctx = document.getElementById('m-gauge-context');
+  if (ctx && s.risk != null) {
+    const tips = {
+      ACCUMULATE: 'Historically cheap relative to long-run trend. Strong accumulation zone — price is well below the regression fair value.',
+      NEUTRAL:    'Fairly valued relative to historical trend. Suitable for regular DCA but not a strong buy signal.',
+      CAUTION:    'Elevated risk. Price is running above fair value. Consider reducing new positions and tightening stop-losses.',
+      EXTREME:    'Historically expensive. Near or above the upper sigma band. This is a sell/reduce zone, not a buy zone.',
+    };
+    ctx.innerHTML = [
+      '<div style="margin-bottom:.4rem"><span style="color:var(--text);font-weight:600">' + (s.zone || '') + '</span></div>',
+      tips[s.zone] || '',
+      s.fair_value ? '<div style="margin-top:.5rem">Fair value today: <span style="color:var(--text);font-family:JetBrains Mono,monospace;font-weight:600">$' + s.fair_value.toFixed(2) + '</span></div>' : '',
+      s.deviation != null ? '<div>Deviation from fair value: <span style="color:' + (s.deviation >= 0 ? 'var(--red)' : 'var(--green)') + ';font-family:JetBrains Mono,monospace;font-weight:600">' + (s.deviation >= 0 ? '+' : '') + (s.deviation * 100).toFixed(1) + '%</span></div>' : '',
+      s.risk_method ? '<div style="margin-top:.4rem;color:var(--muted)">Method: ' + s.risk_method + ' · σ-band normalisation</div>' : '',
+    ].join('');
+  }
+}
+
+function renderDashboardGauge(data) {
+  const stocks = Object.values(data.stocks).filter(s => !s.error && s.risk != null);
+  if (!stocks.length) return;
+
+  const avgRisk = stocks.reduce((a, s) => a + s.risk, 0) / stocks.length;
+  const row = document.getElementById('dashboard-gauge-row');
+  if (row) row.style.display = 'flex';
+
+  drawGauge(document.getElementById('dash-gauge-svg'), avgRisk, 160, 90);
+
+  const statsEl = document.getElementById('dash-gauge-stats');
+  if (statsEl) {
+    const byZone = { ACCUMULATE: 0, NEUTRAL: 0, CAUTION: 0, EXTREME: 0 };
+    stocks.forEach(s => { if (s.zone && byZone[s.zone] !== undefined) byZone[s.zone]++; });
+    statsEl.innerHTML = [
+      '<div style="font-size:.75rem;font-weight:700;color:' + riskColor(avgRisk) + ';font-family:JetBrains Mono,monospace">' + avgRisk.toFixed(3) + ' ' + riskZone(avgRisk) + '</div>',
+      Object.entries(byZone).map(([z, c]) =>
+        '<div style="display:flex;align-items:center;gap:.4rem"><span class="zone-badge zone-' + z.toLowerCase() + '">' + z + '</span><span style="font-family:JetBrains Mono,monospace;font-weight:700">' + c + '</span></div>'
+      ).join(''),
+    ].join('');
+  }
+}
+
+
+// ── Time in Risk Bands ─────────────────────────────────────────────────────────
+let bandsChart = null;
+
+function renderRiskBands(s) {
+  if (bandsChart) { bandsChart.destroy(); bandsChart = null; }
+
+  const risks = s.chart?.risks;
+  if (!risks || risks.length < 10) {
+    document.querySelector('.risk-bands-wrap').innerHTML =
+      '<div style="color:var(--muted);font-size:.68rem">Insufficient data</div>';
+    return;
+  }
+
+  // Bucket into 10 bands
+  const buckets  = Array(10).fill(0);
+  const labels   = ['0.0–0.1','0.1–0.2','0.2–0.3','0.3–0.4','0.4–0.5','0.5–0.6','0.6–0.7','0.7–0.8','0.8–0.9','0.9–1.0'];
+  const zoneMap  = [0,0,0,0,1,1,1,2,2,3]; // 0=accum,1=neutral,2=caution,3=extreme
+  const zColors  = ['rgba(74,222,128,.8)','rgba(251,191,36,.8)','rgba(251,146,60,.8)','rgba(248,113,113,.8)'];
+  const zNames   = ['Accumulate','Neutral','Caution','Extreme'];
+
+  risks.forEach(r => {
+    const b = Math.min(9, Math.floor(r * 10));
+    buckets[b]++;
+  });
+
+  const total  = risks.length;
+  const pcts   = buckets.map(b => parseFloat(((b / total) * 100).toFixed(1)));
+  const colors = buckets.map((_, i) => zColors[zoneMap[i]]);
+
+  // Current band highlight
+  const currentBand = s.risk != null ? Math.min(9, Math.floor(s.risk * 10)) : -1;
+  const borderColors = buckets.map((_, i) => i === currentBand ? '#fff' : 'transparent');
+  const borderWidths = buckets.map((_, i) => i === currentBand ? 2 : 0);
+
+  const ctx = document.getElementById('m-bands-chart').getContext('2d');
+  bandsChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data:            pcts,
+        backgroundColor: colors,
+        borderColor:     borderColors,
+        borderWidth:     borderWidths,
+        borderRadius:    3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ctx.parsed.y.toFixed(1) + '% of days (' + buckets[ctx.dataIndex] + ' days)' } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 8 }, maxRotation: 45 } },
+        y: { grid: { color: 'rgba(100,100,120,.15)' }, ticks: { callback: v => v + '%', font: { size: 9 } } }
+      }
+    }
+  });
+
+  // Zone summary legend
+  const zoneTotals = [0, 0, 0, 0];
+  buckets.forEach((b, i) => zoneTotals[zoneMap[i]] += b);
+  document.getElementById('m-bands-legend').innerHTML = zoneTotals.map((total2, i) => {
+    const pct = ((total2 / total) * 100).toFixed(0);
+    return '<div class="risk-bands-legend-item">' +
+      '<div class="rbl-dot" style="background:' + zColors[i] + '"></div>' +
+      '<span class="rbl-label">' + zNames[i] + '</span>' +
+      '<span class="rbl-pct">' + pct + '%</span>' +
+      '</div>';
+  }).join('') + (currentBand >= 0 ? '<div style="margin-top:.5rem;font-size:.58rem;color:var(--muted)">★ current band highlighted</div>' : '');
+}
+
+
+// ── Monthly Returns Heatmap ────────────────────────────────────────────────────
+function renderMonthlyHeatmap(s) {
+  const el = document.getElementById('m-monthly-heatmap');
+  if (!el) return;
+
+  const dates  = s.chart?.dates;
+  const prices = s.chart?.prices;
+  if (!dates || dates.length < 20) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:.68rem">Insufficient price history for monthly returns</div>';
+    return;
+  }
+
+  // Build month-end price map
+  const monthPrices = {};
+  dates.forEach((d, i) => {
+    const [yr, mo] = d.split('-');
+    const key = yr + '-' + mo;
+    monthPrices[key] = prices[i]; // last price in each month wins
+  });
+
+  // Compute monthly returns
+  const months  = Object.keys(monthPrices).sort();
+  const returns = {};
+  for (let i = 1; i < months.length; i++) {
+    const prev = monthPrices[months[i - 1]];
+    const curr = monthPrices[months[i]];
+    if (prev && curr) returns[months[i]] = (curr - prev) / prev;
+  }
+
+  // Group by year
+  const years = [...new Set(months.map(m => m.split('-')[0]))].sort();
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function retColor(r) {
+    if (r == null) return 'var(--surface2)';
+    const t = document.documentElement.dataset.theme;
+    if (r >= 0.15)  return t === 'dark' ? '#14532d' : '#bbf7d0';
+    if (r >= 0.07)  return t === 'dark' ? '#166534' : '#dcfce7';
+    if (r >= 0.02)  return t === 'dark' ? '#16a34a' : '#4ade80';
+    if (r >= 0)     return t === 'dark' ? '#22c55e' : '#86efac';
+    if (r >= -0.02) return t === 'dark' ? '#dc2626' : '#fecaca';
+    if (r >= -0.07) return t === 'dark' ? '#b91c1c' : '#f87171';
+    if (r >= -0.15) return t === 'dark' ? '#991b1b' : '#ef4444';
+    return t === 'dark' ? '#7f1d1d' : '#dc2626';
+  }
+  function textColor(r) {
+    if (r == null) return 'var(--muted)';
+    return Math.abs(r) > 0.05 ? '#fff' : 'var(--text)';
+  }
+
+  // Header row
+  let html = '<div style="width:max-content">';
+  html += '<div class="heatmap-row" style="margin-bottom:2px">';
+  html += '<div class="year-label"></div>';
+  MON.forEach(m => html += '<div class="month-header">' + m + '</div>');
+  html += '</div>';
+
+  years.slice(-7).forEach(yr => {  // last 7 years
+    html += '<div class="heatmap-row">';
+    html += '<div class="year-label">' + yr + '</div>';
+    for (let mo = 1; mo <= 12; mo++) {
+      const key = yr + '-' + String(mo).padStart(2, '0');
+      const r   = returns[key];
+      const bg  = retColor(r);
+      const tc  = textColor(r);
+      const tip = r != null ? (r >= 0 ? '+' : '') + (r * 100).toFixed(1) + '%' : '—';
+      html += '<div class="month-cell" style="background:' + bg + ';color:' + tc + '" title="' + MON[mo-1] + ' ' + yr + ': ' + tip + '">' +
+        (r != null ? (r >= 0 ? '+' : '') + (r * 100).toFixed(0) : '') +
+        '</div>';
+    }
+    html += '</div>';
+  });
+
+  // Legend
+  html += '<div class="heatmap-legend-row">';
+  html += '<span>Less</span>';
+  html += '<div class="heatmap-legend-swatch">';
+  ['#7f1d1d','#991b1b','#b91c1c','#dc2626','#22c55e','#16a34a','#166534','#14532d'].forEach(c =>
+    html += '<div style="background:' + c + ';width:18px;height:10px;border-radius:1px"></div>'
+  );
+  html += '</div>';
+  html += '<span>More</span>';
+  html += '<span style="margin-left:auto">Red = negative · Green = positive</span>';
+  html += '</div>';
+
+  html += '</div>';
+  el.innerHTML = html;
 }
 
 // ── Accumulate Zone Pie ───────────────────────────────────────────────────────
