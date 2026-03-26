@@ -29,6 +29,14 @@
   --radius:    10px;
   --radius-sm: 6px;
 }
+function buyScoreColor(v) {
+  if (v >= 0.75) return 'var(--accent)';
+  if (v >= 0.55) return '#a8e063';
+  if (v >= 0.40) return '#f0c040';
+  if (v >= 0.25) return '#f0913a';
+  return 'var(--red)';
+}
+
 [data-theme="light"] {
   --bg:        #f0f2f7;
   --surface:   #ffffff;
@@ -415,6 +423,34 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
   .modal-metrics-row{grid-template-columns:repeat(2,1fr)}
   .returns-grid{grid-template-columns:repeat(2,1fr)}
 }
+
+/* Charts Page */
+.charts-page{display:flex;height:calc(100vh - 60px);overflow:hidden}
+.charts-sidebar{width:240px;min-width:200px;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.charts-sidebar-title{padding:.9rem 1rem .5rem;font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--border)}
+.charts-search{margin:.6rem .7rem;padding:.42rem .7rem;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:.82rem;outline:none;width:calc(100% - 1.4rem)}
+.charts-stock-list{flex:1;overflow-y:auto}
+.charts-stock-item{padding:.5rem 1rem;cursor:pointer;border-left:3px solid transparent;transition:background .12s;display:flex;justify-content:space-between;align-items:center;font-size:.82rem}
+.charts-stock-item:hover{background:var(--hover)}
+.charts-stock-item.active{background:var(--hover);border-left-color:var(--accent2)}
+.charts-stock-item .csi-ticker{font-weight:600}
+.charts-stock-item .csi-risk{font-size:.71rem;font-family:monospace;opacity:.8}
+.charts-main{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:1rem 1.2rem;min-width:0}
+.charts-header-row{display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap;margin-bottom:.6rem}
+.charts-stock-title{font-size:1.35rem;font-weight:700}
+.charts-stock-sub{font-size:.8rem;color:var(--muted);margin-top:.15rem}
+.charts-info-pills{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-top:.2rem}
+.charts-pill{padding:.22rem .55rem;border-radius:12px;font-size:.72rem;font-weight:600;background:var(--border);font-family:monospace}
+.charts-zoom-row{display:flex;gap:.3rem;margin-left:auto;align-items:center}
+.czoom{padding:.22rem .5rem;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-size:.74rem;transition:all .12s}
+.czoom:hover,.czoom.active{background:var(--accent2);color:#000;border-color:var(--accent2)}
+.charts-legend-row{display:flex;gap:1.2rem;padding:.5rem 0 .15rem;font-size:.76rem;color:var(--muted)}
+.cleg{display:flex;align-items:center;gap:.35rem}
+.cleg-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0}
+.charts-drag-hint{font-size:.68rem;color:var(--muted);opacity:.55;text-align:center;padding-bottom:.1rem}
+.buy-score-badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:.71rem;font-weight:700;color:#000;font-family:monospace}
+#tab-charts.active{height:calc(100vh - 60px);overflow:hidden;padding:0}
+
 </style>
 </head>
 <body>
@@ -426,6 +462,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
   <div class="nav-tabs">
     <button class="nav-tab active" data-tab="dashboard">Dashboard</button>
     <button class="nav-tab" data-tab="ideas">Ideas</button>
+    <button class="nav-tab" data-tab="charts">Charts</button>
   </div>
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
@@ -497,8 +534,9 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
             <th onclick="sortTable('risk')">Risk<span class="sa"></span></th>
             <th>Zone</th>
             <th>Method</th>
-            <th onclick="sortTable('fair_value')">Fair Value<span class="sa"></span></th>
-            <th onclick="sortTable('deviation')">Deviation<span class="sa"></span></th>
+            <th onclick="sortTable('trend_value')">Trend Value<span class="sa"></span></th>
+            <th onclick="sortTable('trend_deviation')">Trend Dev<span class="sa"></span></th>
+            <th onclick="sortTable('buy_score')>Buy Score<span class="sa"></span></th>
             <th onclick="sortTable('trailing_pe')">P/E<span class="sa"></span></th>
             <th onclick="sortTable('market_cap')">Mkt Cap<span class="sa"></span></th>
             <th onclick="sortTable('rsi')">RSI<span class="sa"></span></th>
@@ -1107,7 +1145,7 @@ function renderTable() {
       </tr>`;
 
     const bw = Math.round((s.risk??0)*60);
-    const dC = s.deviation!=null?(s.deviation>=0?'neg':'pos'):'na';
+    const dC = s.trend_deviation!=null?(s.trend_deviation>=0?'neg':'pos'):'na';
     return `
       <tr>
         <td class="td-ticker" onclick="openStockModal('${s.ticker}')">${s.ticker}<span class="owned-star ${o?'owned':''}" onclick="event.stopPropagation();toggleOwnedTicker('${s.ticker}')">${o?'★':'☆'}</span></td>
@@ -1121,9 +1159,10 @@ function renderTable() {
         </td>
         <td><span class="${zoneClass(s.zone)}">${s.zone||'—'}</span></td>
         <td><span class="method-tag">${s.risk_method||'—'}</span></td>
-        <td class="mono">${fmtP(s.fair_value)}</td>
-        <td class="mono ${dC}">${fmtPct(s.deviation)}</td>
-        <td class="mono">${fmtPE(s.trailing_pe)}</td>
+        <td class="mono">${fmtP(s.trend_value)}</td>
+        <td class="mono ${dC}">${fmtPct(s.trend_deviation)}</td>
+        <td class="mono">${s.buy_score!=null?'<span class="buy-score-badge" style="background:'+buyScoreColor(s.buy_score)+'">'+fmtR(s.buy_score)+'</span>':"—"}</td>
+        <td>${fmtPE(s.trailing_pe)}</td>
         <td class="mono">${fmtCap(s.market_cap)}</td>
         <td class="mono" style="color:${s.rsi!=null?(s.rsi>70?'var(--red)':s.rsi<30?'var(--green)':'var(--text)'):'var(--muted)'}">${s.rsi!=null?s.rsi.toFixed(0):'—'}</td>
         <td class="mono ${s.ret_1y!=null?(s.ret_1y>=0?'pos':'neg'):'na'}">${fmtPct(s.ret_1y)}</td>
@@ -1218,7 +1257,7 @@ function renderSignals(data) {
         <div class="signal-risk">${fmtR(s.risk)}</div>
       </div>
       <div class="signal-price">${fmtP(s.price)} · ${s.name}</div>
-      <div class="signal-deviation ${s.deviation!=null?(s.deviation>=0?'neg':'pos'):'na'}">${fmtPct(s.deviation)} vs fair value</div>
+      <div class="signal-deviation ${s.trend_deviation!=null?(s.trend_deviation>=0?'neg':'pos'):'na'}">${fmtPct(s.trend_deviation)} vs fair value</div>
     </div>`).join('');
 }
 
@@ -1258,8 +1297,8 @@ function exportCSV() {
   const rows = [['Ticker','Name','Sector','Price','Risk','Method','Zone','Fair Value','Deviation %','P/E','Mkt Cap','RSI','1Y %','2Y %','3Y %','5Y %','Allocation %']];
   Object.values(G.data.stocks).forEach(s => {
     rows.push([
-      s.ticker, s.name, s.sector||'', s.price||'', s.risk||'', s.risk_method||'', s.zone||'', s.fair_value||'',
-      s.deviation!=null?(s.deviation*100).toFixed(2):'',
+      s.ticker, s.name, s.sector||'', s.price||'', s.risk||'', s.risk_method||'', s.zone||'', s.trend_value||'',
+      s.trend_deviation!=null?(s.trend_deviation*100).toFixed(2):'',
       s.trailing_pe||'', s.market_cap||'', s.rsi||'',
       s.ret_1y!=null?(s.ret_1y*100).toFixed(2):'',
       s.ret_2y!=null?(s.ret_2y*100).toFixed(2):'',
@@ -1317,13 +1356,14 @@ function openStockModal(ticker) {
   const m = [
     { lbl:'Price',           val:fmtP(s.price),                                    color:'' },
     { lbl:'Risk',            val:fmtR(s.risk),                                     color:riskColor(s.risk) },
-    { lbl:'Fair Value',      val:fmtP(s.fair_value),                               color:'' },
-    { lbl:'Deviation',       val:fmtPct(s.deviation),                              color:s.deviation!=null?(s.deviation>=0?'var(--red)':'var(--green)'):'' },
+    { lbl:'Trend Value',      val:fmtP(s.trend_value),                               color:'' },
+    { lbl:'Deviation',       val:fmtPct(s.trend_deviation),                              color:s.trend_deviation!=null?(s.trend_deviation>=0?'var(--red)':'var(--green)'):'' },
     { lbl:'Market Cap',      val:fmtCap(s.market_cap),                             color:'' },
     { lbl:'Beta',            val:s.beta!=null?s.beta.toFixed(2):'—',              color:'' },
     { lbl:'Analyst Target',  val:fmtP(s.analyst_target),                           color:s.analyst_target&&s.price?(s.analyst_target>s.price?'var(--green)':'var(--red)'):'' },
     { lbl:'P/E (TTM)',       val:fmtPE(s.trailing_pe),                             color:'' },
     { lbl:'Forward P/E',     val:fmtPE(s.forward_pe),                              color:'' },
+    { lbl:'Buy Score', val:s.buy_score!=null?fmtR(s.buy_score):'—', color:s.buy_score!=null?buyScoreColor(s.buy_score):'' },
     { lbl:'Industry',        val:s.industry||'—',                                  color:'var(--muted)' },
   ];
   document.getElementById('m-metrics').innerHTML = m.map(x=>`
@@ -1975,8 +2015,8 @@ function renderModalGauge(s) {
     ctx.innerHTML = [
       '<div style="margin-bottom:.4rem"><span style="color:var(--text);font-weight:600">' + (s.zone || '') + '</span></div>',
       tips[s.zone] || '',
-      s.fair_value ? '<div style="margin-top:.5rem">Fair value today: <span style="color:var(--text);font-family:JetBrains Mono,monospace;font-weight:600">$' + s.fair_value.toFixed(2) + '</span></div>' : '',
-      s.deviation != null ? '<div>Deviation from fair value: <span style="color:' + (s.deviation >= 0 ? 'var(--red)' : 'var(--green)') + ';font-family:JetBrains Mono,monospace;font-weight:600">' + (s.deviation >= 0 ? '+' : '') + (s.deviation * 100).toFixed(1) + '%</span></div>' : '',
+      s.trend_value ? '<div style="margin-top:.5rem">Fair value today: <span style="color:var(--text);font-family:JetBrains Mono,monospace;font-weight:600">$' + s.trend_value.toFixed(2) + '</span></div>' : '',
+      s.trend_deviation != null ? '<div>Deviation from fair value: <span style="color:' + (s.trend_deviation >= 0 ? 'var(--red)' : 'var(--green)') + ';font-family:JetBrains Mono,monospace;font-weight:600">' + (s.trend_deviation >= 0 ? '+' : '') + (s.trend_deviation * 100).toFixed(1) + '%</span></div>' : '',
       s.risk_method ? '<div style="margin-top:.4rem;color:var(--muted)">Method: ' + s.risk_method + ' · σ-band normalisation</div>' : '',
     ].join('');
   }
@@ -2258,6 +2298,233 @@ function buildAccumPie() {
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 loadDashboard();
+
+// Charts Page
+let chartsChart = null;
+let chartsCurrentTicker = null;
+let chartsAllItems = [];
+
+function initChartsPage() {
+  if (!dashData || !dashData.stocks) return;
+  chartsAllItems = Object.values(dashData.stocks)
+    .filter(function(s){ return s.chart && s.chart.dates && s.chart.dates.length > 0; })
+    .sort(function(a,b){ return a.ticker.localeCompare(b.ticker); });
+  renderChartsStockList(chartsAllItems);
+  if (!chartsCurrentTicker && chartsAllItems.length) {
+    loadChartStock(chartsAllItems[0].ticker);
+  }
+}
+
+function renderChartsStockList(items) {
+  var el = document.getElementById('charts-stock-list');
+  if (!el) return;
+  el.innerHTML = items.map(function(s) {
+    var rc = riskColor(s.risk);
+    return '<div class="charts-stock-item' + (chartsCurrentTicker===s.ticker?' active':'') + '" onclick="loadChartStock(\'' + s.ticker + '\')">' +
+      '<span class="csi-ticker">' + s.ticker + '</span>' +
+      '<span class="csi-risk" style="color:' + rc + '">' + (s.risk!=null?s.risk.toFixed(3):'--') + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+function filterChartsList() {
+  var q = (document.getElementById('charts-search').value || '').toLowerCase();
+  var filtered = chartsAllItems.filter(function(s) {
+    return s.ticker.toLowerCase().includes(q) || (s.name && s.name.toLowerCase().includes(q));
+  });
+  renderChartsStockList(filtered);
+}
+
+function loadChartStock(ticker) {
+  if (!dashData || !dashData.stocks[ticker]) return;
+  chartsCurrentTicker = ticker;
+  var s = dashData.stocks[ticker];
+  filterChartsList();
+  document.getElementById('charts-empty-state').style.display = 'none';
+  var content = document.getElementById('charts-content');
+  content.style.display = 'flex';
+  content.style.flexDirection = 'column';
+  document.getElementById('charts-title').textContent = s.ticker + ' (' + (s.name||'') + ')';
+  document.getElementById('charts-sub').textContent = (s.sector||'') + (s.risk_method ? '  ·  ' + s.risk_method + ' method' : '');
+  var rp = document.getElementById('charts-risk-pill');
+  rp.textContent = 'Risk ' + (s.risk!=null ? s.risk.toFixed(3) : '--');
+  if (s.risk!=null) { rp.style.background = riskColorHex(s.risk); rp.style.color='#000'; }
+  var bp = document.getElementById('charts-buy-pill');
+  bp.textContent = 'Buy ' + (s.buy_score!=null ? s.buy_score.toFixed(3) : '--');
+  if (s.buy_score!=null) { bp.style.background = buyScoreColor(s.buy_score); bp.style.color='#000'; }
+  document.getElementById('charts-method-pill').textContent = s.risk_method || '--';
+  buildChartsMainChart(s);
+}
+
+function buildChartsMainChart(s) {
+  var canvas = document.getElementById('charts-canvas');
+  if (!canvas) return;
+  if (chartsChart) { chartsChart.destroy(); chartsChart = null; }
+  var isDark = document.documentElement.dataset.theme !== 'light';
+  var gridColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)';
+  var textColor = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)';
+  var accentCol = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#c6f135';
+  var labels = s.chart.dates  || [];
+  var prices = s.chart.prices || [];
+  var risks  = s.chart.risks  || [];
+  var buys   = s.chart.buys   || [];
+  chartsChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: s.ticker + ' Price', data: prices, yAxisID: 'yPrice',
+          borderColor: '#4a9eff', backgroundColor: 'rgba(74,158,255,0.04)',
+          borderWidth: 1.5, pointRadius: 0, tension: 0, fill: false, order: 1 },
+        { label: 'Risk', data: risks.length ? risks : null, yAxisID: 'yOverlay',
+          borderColor: '#ff6b6b', backgroundColor: 'rgba(255,107,107,0.04)',
+          borderWidth: 1.5, pointRadius: 0, tension: 0, fill: false, order: 2 },
+        { label: 'Buy Score', data: buys.length ? buys : null, yAxisID: 'yOverlay',
+          borderColor: accentCol, backgroundColor: 'rgba(198,241,53,0.03)',
+          borderWidth: 1.5, pointRadius: 0, tension: 0, fill: false, order: 3 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: isDark ? 'rgba(20,20,30,0.92)' : 'rgba(255,255,255,0.95)',
+          titleColor: isDark ? '#fff' : '#000',
+          bodyColor: isDark ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.7)',
+          borderColor: 'rgba(128,128,128,0.2)', borderWidth: 1,
+          callbacks: {
+            label: function(ctx) {
+              var v = ctx.parsed.y;
+              if (ctx.datasetIndex === 0) return '  Price: $' + (v!=null ? v.toFixed(2) : '--');
+              return '  ' + ctx.dataset.label + ': ' + (v!=null ? v.toFixed(3) : '--');
+            }
+          }
+        },
+        zoom: {
+          pan: { enabled: true, mode: 'x' },
+          zoom: {
+            drag: { enabled: true, backgroundColor: 'rgba(128,128,200,0.15)' },
+            wheel: { enabled: false }, mode: 'x',
+            onZoomComplete: function() {
+              document.querySelectorAll('.czoom[data-zoom]').forEach(function(b){ b.classList.remove('active'); });
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'category', ticks: { color: textColor, maxRotation: 0, autoSkip: true, maxTicksLimit: 12,
+            callback: function(val) { var d = this.getLabelForValue(val); return d ? d.substring(0,7) : ''; }
+          }, grid: { color: gridColor }
+        },
+        yPrice: {
+          type: 'logarithmic', position: 'left',
+          ticks: { color: textColor, callback: function(v) {
+            if (v >= 1000) return '$' + (v/1000).toFixed(0) + 'k';
+            if (v >= 1) return '$' + v.toFixed(0);
+            return '$' + v.toFixed(2);
+          }},
+          grid: { color: gridColor },
+          title: { display: true, text: 'Price ($)', color: textColor, font:{size:10} }
+        },
+        yOverlay: {
+          type: 'linear', position: 'right', min: 0, max: 1,
+          ticks: { color: textColor, stepSize: 0.2, callback: function(v){ return v.toFixed(1); } },
+          grid: { display: false },
+          title: { display: true, text: 'Risk / Buy Score', color: textColor, font:{size:10} }
+        }
+      }
+    }
+  });
+  setChartsZoom('all');
+}
+
+function setChartsZoom(period) {
+  document.querySelectorAll('.czoom[data-zoom]').forEach(function(b){
+    b.classList.toggle('active', b.dataset.zoom === period);
+  });
+  if (!chartsChart) return;
+  if (period === 'all') { chartsChart.resetZoom(); return; }
+  var labels = chartsChart.data.labels;
+  var yearsMap = {'1y':1,'2y':2,'5y':5,'10y':10};
+  var years = yearsMap[period] || 2;
+  var now = new Date();
+  var cutoff = new Date(now.getFullYear()-years, now.getMonth(), now.getDate());
+  var cutoffStr = cutoff.toISOString().substring(0,10);
+  var startIdx = 0;
+  for (var i = 0; i < labels.length; i++) {
+    if (labels[i] >= cutoffStr) { startIdx = Math.max(0,i-1); break; }
+  }
+  chartsChart.zoomScale('x', {min:startIdx, max:labels.length-1}, 'none');
+}
+
+function resetChartZoom() {
+  if (chartsChart) chartsChart.resetZoom();
+  document.querySelectorAll('.czoom[data-zoom]').forEach(function(b){
+    b.classList.toggle('active', b.dataset.zoom === 'all');
+  });
+}
+
+document.querySelectorAll('.czoom[data-zoom]').forEach(function(btn) {
+  btn.addEventListener('click', function(){ setChartsZoom(btn.dataset.zoom); });
+});
+
+document.querySelectorAll('.nav-tab').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    if (btn.dataset.tab === 'charts') {
+      setTimeout(function(){ if (typeof dashData !== 'undefined') initChartsPage(); }, 80);
+    }
+  });
+});
+
 </script>
+
+  <div class="tab-panel" id="tab-charts">
+    <div class="charts-page">
+      <div class="charts-sidebar">
+        <div class="charts-sidebar-title">Historical Risk Charts</div>
+        <input type="text" class="charts-search" id="charts-search" placeholder="Search ticker..." oninput="filterChartsList()">
+        <div class="charts-stock-list" id="charts-stock-list"></div>
+      </div>
+      <div class="charts-main">
+        <div id="charts-empty-state" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;opacity:0.35;gap:1rem;pointer-events:none">
+          <div style="font-size:2.5rem">&#x1F4C8;</div>
+          <div style="font-size:1rem">Select a stock from the list</div>
+        </div>
+        <div id="charts-content" style="display:none;height:100%;flex-direction:column">
+          <div class="charts-header-row">
+            <div>
+              <div class="charts-stock-title" id="charts-title">&#8212;</div>
+              <div class="charts-stock-sub" id="charts-sub">&#8212;</div>
+            </div>
+            <div class="charts-info-pills">
+              <span class="charts-pill" id="charts-risk-pill">Risk &#8212;</span>
+              <span class="charts-pill" id="charts-buy-pill">Buy &#8212;</span>
+              <span class="charts-pill" id="charts-method-pill">&#8212;</span>
+            </div>
+            <div class="charts-zoom-row">
+              <button class="czoom active" data-zoom="all">All</button>
+              <button class="czoom" data-zoom="10y">10Y</button>
+              <button class="czoom" data-zoom="5y">5Y</button>
+              <button class="czoom" data-zoom="2y">2Y</button>
+              <button class="czoom" data-zoom="1y">1Y</button>
+              <button class="czoom" onclick="resetChartZoom()">Reset</button>
+            </div>
+          </div>
+          <div style="flex:1;position:relative;min-height:0">
+            <canvas id="charts-canvas"></canvas>
+          </div>
+          <div class="charts-legend-row">
+            <span class="cleg"><span class="cleg-dot" style="background:#4a9eff"></span>Price (log, left axis)</span>
+            <span class="cleg"><span class="cleg-dot" style="background:#ff6b6b"></span>Risk (0&#8211;1, right axis)</span>
+            <span class="cleg"><span class="cleg-dot" style="background:#c6f135"></span>Buy Score (0&#8211;1, right axis)</span>
+          </div>
+          <div class="charts-drag-hint">Drag to zoom &#183; Double-click to reset</div>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
