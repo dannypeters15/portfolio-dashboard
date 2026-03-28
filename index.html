@@ -2424,7 +2424,7 @@ function buildAccumPie() {
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────
-loadDashboard
+
 // ── Charts Tab ────────────────────────────────────────────────────────────────
 let _chartsInited = false;
 let _chartsChart = null;
@@ -2444,20 +2444,20 @@ function initChartsTab() {
     const tickers = Object.keys(G.data.stocks);
     if (tickers.length) chartsSelectTicker(tickers[0]);
   }
-  setTimeout(() => { if (_chartsChart) _chartsChart.resize(); }, 50);
+  setTimeout(function() { if (_chartsChart) _chartsChart.resize(); }, 50);
 }
 
 function _buildChartsSidebar(filter) {
   const list = document.getElementById('charts-ticker-list');
   if (!list || !G.data) return;
   const stocks = G.data.stocks;
-  const keys = Object.keys(stocks).filter(t => {
+  const keys = Object.keys(stocks).filter(function(t) {
     if (!filter) return true;
     const s = stocks[t];
     return t.toLowerCase().includes(filter.toLowerCase()) ||
            (s.name||'').toLowerCase().includes(filter.toLowerCase());
   });
-  list.innerHTML = keys.map(t => {
+  list.innerHTML = keys.map(function(t) {
     const s = stocks[t];
     const r = s.risk != null ? s.risk : null;
     let rColor = '#888';
@@ -2468,115 +2468,87 @@ function _buildChartsSidebar(filter) {
       else rColor = 'var(--extreme)';
     }
     const active = t === _chartsActiveTicker ? ' cti-active' : '';
-    return '<div class="charts-ticker-item' + active + '" onclick="chartsSelectTicker(\'' + t + '\')" data-sym="' + t + '">' +
+    const rBadge = r != null ? '<div class="charts-ticker-risk" style="color:' + rColor + ';background:' + rColor + '22">' + r.toFixed(3) + '</div>' : '';
+    return '<div class="charts-ticker-item' + active + '" onclick="chartsSelectTicker('' + t + '')" data-sym="' + t + '">' +
       '<div><div class="charts-ticker-sym">' + t + '</div>' +
-      '<div class="charts-ticker-name">' + (s.name||'') + '</div></div>' +
-      (r != null ? '<div class="charts-ticker-risk" style="color:' + rColor + ';background:' + rColor + '22">' + r.toFixed(3) + '</div>' : '') +
-      '</div>';
+      '<div class="charts-ticker-name">' + (s.name||'') + '</div></div>' + rBadge + '</div>';
   }).join('');
 }
 
-function chartsFilterList(val) {
-  _buildChartsSidebar(val);
-}
+function chartsFilterList(val) { _buildChartsSidebar(val); }
 
 function chartsSelectTicker(ticker) {
   _chartsActiveTicker = ticker;
   _chartsActiveZoom = 'all';
-
-  document.querySelectorAll('.charts-ticker-item').forEach(el => {
+  document.querySelectorAll('.charts-ticker-item').forEach(function(el) {
     el.classList.toggle('cti-active', el.dataset.sym === ticker);
   });
-
   const s = G.data.stocks[ticker];
   if (!s || !s.chart) return;
-
   document.getElementById('charts-title').textContent = (s.name || ticker) + ' (' + ticker + ')';
   const r = s.risk != null ? s.risk.toFixed(3) : 'N/A';
   document.getElementById('charts-sub').textContent =
     'Risk: ' + r + '  ·  Zone: ' + (s.zone||'') + '  ·  Method: ' + (s.risk_method||'') +
     '  ·  Price: $' + (s.price != null ? s.price.toFixed(2) : 'N/A');
-
   _chartsFullDates  = s.chart.dates  || [];
   _chartsFullPrices = s.chart.prices || [];
   _chartsFullRisks  = s.chart.risks  || [];
-
-  document.querySelectorAll('.czb').forEach(b => b.classList.remove('czb-active'));
+  document.querySelectorAll('.czb').forEach(function(b) { b.classList.remove('czb-active'); });
   const allBtn = document.querySelector('.czb[data-zoom="all"]');
   if (allBtn) allBtn.classList.add('czb-active');
   document.getElementById('charts-reset-btn').style.display = 'none';
-
   _chartsRender(_chartsFullDates, _chartsFullPrices, _chartsFullRisks);
 }
 
 function _chartsRender(dates, prices, risks) {
   const canvas = document.getElementById('charts-canvas');
   if (!canvas) return;
-  const wrap = canvas.parentElement;
   canvas.style.width  = '100%';
   canvas.style.height = '100%';
-
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
   const textColor = isDark ? '#9ca3af' : '#6b7280';
-
   const chartData = {
     labels: dates,
     datasets: [
       {
-        label: 'Price',
-        data: prices,
-        borderColor: '#4e9af1',
-        borderWidth: 1.5,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        tension: 0.1,
-        yAxisID: 'yPrice',
-        order: 2,
+        label: 'Price', data: prices,
+        borderColor: '#4e9af1', borderWidth: 1.5,
+        pointRadius: 0, pointHoverRadius: 4, tension: 0.1,
+        yAxisID: 'yPrice', order: 2
       },
       {
-        label: 'Risk',
-        data: risks,
-        borderColor: 'rgba(239,68,68,0.9)',
-        borderWidth: 1.2,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        tension: 0.1,
+        label: 'Risk', data: risks,
+        borderColor: 'rgba(239,68,68,0.9)', borderWidth: 1.2,
+        pointRadius: 0, pointHoverRadius: 4, tension: 0.1,
         fill: 'origin',
         backgroundColor: function(ctx) {
-          const chart = ctx.chart;
-          const {ctx: c, chartArea} = chart;
-          if (!chartArea) return 'rgba(239,68,68,0.3)';
-          const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+          var chart = ctx.chart, ca = chart.chartArea;
+          if (!ca) return 'rgba(239,68,68,0.3)';
+          var g = chart.ctx.createLinearGradient(0, ca.top, 0, ca.bottom);
           g.addColorStop(0,   'rgba(239,68,68,0.55)');
           g.addColorStop(0.4, 'rgba(234,179,8,0.35)');
           g.addColorStop(0.7, 'rgba(132,204,22,0.25)');
           g.addColorStop(1,   'rgba(132,204,22,0.05)');
           return g;
         },
-        yAxisID: 'yRisk',
-        order: 1,
+        yAxisID: 'yRisk', order: 1
       }
     ]
   };
-
   const opts = {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false,
+    responsive: true, maintainAspectRatio: false, animation: false,
     interaction: { mode: 'index', intersect: false },
     plugins: {
       legend: { display: false },
       tooltip: {
         backgroundColor: isDark ? '#1e1e2e' : '#fff',
-        borderColor: isDark ? '#333' : '#ddd',
-        borderWidth: 1,
+        borderColor: isDark ? '#333' : '#ddd', borderWidth: 1,
         titleColor: textColor,
-        bodyColor: isDark ? '#e2e8f0' : '#1f2937',
-        padding: 10,
+        bodyColor: isDark ? '#e2e8f0' : '#1f2937', padding: 10,
         callbacks: {
-          title: (items) => items[0].label,
-          label: (item) => {
+          title: function(items) { return items[0].label; },
+          label: function(item) {
             if (item.datasetIndex === 0) return '  Price: $' + Number(item.raw).toFixed(2);
             return '  Risk:  ' + Number(item.raw).toFixed(3);
           }
@@ -2589,12 +2561,12 @@ function _chartsRender(dates, prices, risks) {
             enabled: true,
             backgroundColor: 'rgba(147,112,219,0.15)',
             borderColor: 'rgba(147,112,219,0.6)',
-            borderWidth: 1,
+            borderWidth: 1
           },
           mode: 'x',
           onZoomComplete: function() {
             document.getElementById('charts-reset-btn').style.display = '';
-            document.querySelectorAll('.czb').forEach(b => b.classList.remove('czb-active'));
+            document.querySelectorAll('.czb').forEach(function(b) { b.classList.remove('czb-active'); });
           }
         }
       }
@@ -2602,18 +2574,12 @@ function _chartsRender(dates, prices, risks) {
     scales: {
       x: {
         type: 'category',
-        ticks: {
-          color: textColor,
-          maxRotation: 0,
-          autoSkip: true,
-          maxTicksLimit: 10,
-          font: { size: 10, family: "'JetBrains Mono', monospace" }
-        },
+        ticks: { color: textColor, maxRotation: 0, autoSkip: true, maxTicksLimit: 10,
+                 font: { size: 10, family: "'JetBrains Mono', monospace" } },
         grid: { color: gridColor }
       },
       yPrice: {
-        type: 'logarithmic',
-        position: 'left',
+        type: 'logarithmic', position: 'left',
         ticks: {
           color: '#4e9af1',
           font: { size: 10, family: "'JetBrains Mono', monospace" },
@@ -2626,20 +2592,13 @@ function _chartsRender(dates, prices, risks) {
         grid: { color: gridColor }
       },
       yRisk: {
-        type: 'linear',
-        position: 'right',
-        min: 0,
-        max: 1,
-        ticks: {
-          color: 'rgba(239,68,68,0.85)',
-          font: { size: 10, family: "'JetBrains Mono', monospace" },
-          stepSize: 0.1
-        },
+        type: 'linear', position: 'right', min: 0, max: 1,
+        ticks: { color: 'rgba(239,68,68,0.85)', stepSize: 0.1,
+                 font: { size: 10, family: "'JetBrains Mono', monospace" } },
         grid: { drawOnChartArea: false }
       }
     }
   };
-
   if (_chartsChart) { _chartsChart.destroy(); _chartsChart = null; }
   _chartsChart = new Chart(canvas, { type: 'line', data: chartData, options: opts });
 }
@@ -2649,21 +2608,16 @@ function chartsZoom(period, btn) {
   _chartsActiveZoom = period;
   if (_chartsChart) { try { _chartsChart.resetZoom(); } catch(e){} }
   document.getElementById('charts-reset-btn').style.display = 'none';
-  document.querySelectorAll('.czb').forEach(b => b.classList.remove('czb-active'));
+  document.querySelectorAll('.czb').forEach(function(b) { b.classList.remove('czb-active'); });
   if (btn) btn.classList.add('czb-active');
-
-  let dates = _chartsFullDates, prices = _chartsFullPrices, risks = _chartsFullRisks;
+  var dates = _chartsFullDates, prices = _chartsFullPrices, risks = _chartsFullRisks;
   if (period !== 'all') {
-    const years = parseInt(period);
-    const cutoff = new Date();
+    var years = parseInt(period);
+    var cutoff = new Date();
     cutoff.setFullYear(cutoff.getFullYear() - years);
-    const cutStr = cutoff.toISOString().slice(0, 10);
-    const idx = dates.findIndex(d => d >= cutStr);
-    if (idx > 0) {
-      dates  = dates.slice(idx);
-      prices = prices.slice(idx);
-      risks  = risks.slice(idx);
-    }
+    var cutStr = cutoff.toISOString().slice(0, 10);
+    var idx = dates.findIndex(function(d) { return d >= cutStr; });
+    if (idx > 0) { dates = dates.slice(idx); prices = prices.slice(idx); risks = risks.slice(idx); }
   }
   _chartsRender(dates, prices, risks);
 }
@@ -2671,10 +2625,11 @@ function chartsZoom(period, btn) {
 function chartsResetZoom() {
   if (_chartsChart) { try { _chartsChart.resetZoom(); } catch(e){} }
   document.getElementById('charts-reset-btn').style.display = 'none';
-  const btn = document.querySelector('.czb[data-zoom="' + _chartsActiveZoom + '"]');
+  var btn = document.querySelector('.czb[data-zoom="' + _chartsActiveZoom + '"]');
   chartsZoom(_chartsActiveZoom, btn);
 }
-();
+
+loadDashboard();
 </script>
 </body>
 </html>
