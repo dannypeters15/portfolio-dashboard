@@ -2437,6 +2437,13 @@ let _chartsFullRisks = [];
 function initChartsTab() {
   if (!G.data) return;
   if (!_chartsInited) {
+    const list = document.getElementById('charts-ticker-list');
+    if (list) {
+      list.addEventListener('click', function(e) {
+        const item = e.target.closest('.charts-ticker-item');
+        if (item && item.dataset.sym) chartsSelectTicker(item.dataset.sym);
+      });
+    }
     _buildChartsSidebar('');
     _chartsInited = true;
   }
@@ -2455,7 +2462,7 @@ function _buildChartsSidebar(filter) {
     if (!filter) return true;
     const s = stocks[t];
     return t.toLowerCase().includes(filter.toLowerCase()) ||
-           (s.name||'').toLowerCase().includes(filter.toLowerCase());
+           (s.name || '').toLowerCase().includes(filter.toLowerCase());
   });
   list.innerHTML = keys.map(function(t) {
     const s = stocks[t];
@@ -2468,10 +2475,13 @@ function _buildChartsSidebar(filter) {
       else rColor = 'var(--extreme)';
     }
     const active = t === _chartsActiveTicker ? ' cti-active' : '';
-    const rBadge = r != null ? '<div class="charts-ticker-risk" style="color:' + rColor + ';background:' + rColor + '22">' + r.toFixed(3) + '</div>' : '';
-    return '<div class="charts-ticker-item' + active + '" onclick="chartsSelectTicker('' + t + '')" data-sym="' + t + '">' +
-      '<div><div class="charts-ticker-sym">' + t + '</div>' +
-      '<div class="charts-ticker-name">' + (s.name||'') + '</div></div>' + rBadge + '</div>';
+    const rBadge = r != null
+      ? '<div class="charts-ticker-risk" style="color:' + rColor + ';background:' + rColor + '22">' + r.toFixed(3) + '</div>'
+      : '';
+    return '<div class="charts-ticker-item' + active + '" data-sym="' + t + '">'
+      + '<div><div class="charts-ticker-sym">' + t + '</div>'
+      + '<div class="charts-ticker-name">' + (s.name || '') + '</div></div>'
+      + rBadge + '</div>';
   }).join('');
 }
 
@@ -2488,8 +2498,9 @@ function chartsSelectTicker(ticker) {
   document.getElementById('charts-title').textContent = (s.name || ticker) + ' (' + ticker + ')';
   const r = s.risk != null ? s.risk.toFixed(3) : 'N/A';
   document.getElementById('charts-sub').textContent =
-    'Risk: ' + r + '  ·  Zone: ' + (s.zone||'') + '  ·  Method: ' + (s.risk_method||'') +
-    '  ·  Price: $' + (s.price != null ? s.price.toFixed(2) : 'N/A');
+    'Risk: ' + r + '  \u00b7  Zone: ' + (s.zone || '') +
+    '  \u00b7  Method: ' + (s.risk_method || '') +
+    '  \u00b7  Price: $' + (s.price != null ? s.price.toFixed(2) : 'N/A');
   _chartsFullDates  = s.chart.dates  || [];
   _chartsFullPrices = s.chart.prices || [];
   _chartsFullRisks  = s.chart.risks  || [];
@@ -2584,7 +2595,7 @@ function _chartsRender(dates, prices, risks) {
           color: '#4e9af1',
           font: { size: 10, family: "'JetBrains Mono', monospace" },
           callback: function(v) {
-            if (v >= 1000) return '$' + (v/1000).toFixed(0) + 'K';
+            if (v >= 1000) return '$' + (v / 1000).toFixed(0) + 'K';
             if (v >= 1)    return '$' + v.toFixed(0);
             return '$' + v.toFixed(2);
           }
@@ -2606,7 +2617,7 @@ function _chartsRender(dates, prices, risks) {
 function chartsZoom(period, btn) {
   if (!_chartsActiveTicker || !_chartsFullDates.length) return;
   _chartsActiveZoom = period;
-  if (_chartsChart) { try { _chartsChart.resetZoom(); } catch(e){} }
+  if (_chartsChart) { try { _chartsChart.resetZoom(); } catch(e) {} }
   document.getElementById('charts-reset-btn').style.display = 'none';
   document.querySelectorAll('.czb').forEach(function(b) { b.classList.remove('czb-active'); });
   if (btn) btn.classList.add('czb-active');
@@ -2623,7 +2634,7 @@ function chartsZoom(period, btn) {
 }
 
 function chartsResetZoom() {
-  if (_chartsChart) { try { _chartsChart.resetZoom(); } catch(e){} }
+  if (_chartsChart) { try { _chartsChart.resetZoom(); } catch(e) {} }
   document.getElementById('charts-reset-btn').style.display = 'none';
   var btn = document.querySelector('.czb[data-zoom="' + _chartsActiveZoom + '"]');
   chartsZoom(_chartsActiveZoom, btn);
