@@ -425,6 +425,36 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
   .modal-metrics-row{grid-template-columns:repeat(2,1fr)}
   .returns-grid{grid-template-columns:repeat(2,1fr)}
 }
+
+/* ── Charts Tab ─────────────────────────────────────── */
+#tab-charts{padding:0;overflow:hidden}
+.charts-layout{display:flex;height:calc(100vh - 56px);overflow:hidden}
+.charts-sidebar{width:220px;min-width:220px;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.charts-sidebar-top{padding:.75rem .6rem .5rem;border-bottom:1px solid var(--border)}
+.charts-sidebar-top h3{font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem}
+.charts-search{width:100%;padding:.35rem .6rem;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.78rem;box-sizing:border-box;outline:none}
+.charts-ticker-list{flex:1;overflow-y:auto}
+.charts-ticker-item{padding:.4rem .75rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;font-size:.79rem;border-bottom:1px solid var(--border);transition:background .1s}
+.charts-ticker-item:hover{background:var(--surface)}
+.charts-ticker-item.cti-active{background:var(--surface);border-left:3px solid var(--accent2);padding-left:calc(.75rem - 3px)}
+.charts-ticker-sym{font-weight:700;font-family:'JetBrains Mono',monospace;font-size:.77rem}
+.charts-ticker-name{font-size:.68rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px}
+.charts-ticker-risk{font-family:'JetBrains Mono',monospace;font-size:.7rem;padding:.1rem .3rem;border-radius:3px;flex-shrink:0}
+.charts-main{flex:1;display:flex;flex-direction:column;padding:1.1rem 1.5rem;overflow:hidden;min-width:0}
+.charts-header-row{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.6rem;flex-wrap:wrap;gap:.5rem}
+.charts-big-title{font-size:1rem;font-weight:700}
+.charts-sub{font-size:.76rem;color:var(--muted);margin-top:.2rem}
+.charts-legend{display:flex;gap:1rem;align-items:center;font-size:.73rem;color:var(--muted);flex-shrink:0}
+.charts-legend-item{display:flex;align-items:center;gap:.35rem}
+.charts-legend-dot{width:14px;height:2.5px;border-radius:2px}
+.charts-zoom-row{display:flex;gap:.35rem;margin-bottom:.65rem;align-items:center}
+.czb{padding:.2rem .6rem;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:.72rem;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;transition:all .15s}
+.czb:hover{border-color:var(--accent2);color:var(--accent2)}
+.czb.czb-active{background:var(--accent2);color:#fff;border-color:var(--accent2)}
+.czb-reset{margin-left:auto;padding:.2rem .6rem;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:.72rem;cursor:pointer;display:none;font-family:'Plus Jakarta Sans',sans-serif}
+.czb-reset:hover{border-color:#f87;color:#f87}
+.charts-canvas-wrap{flex:1;position:relative;min-height:0}
+
 </style>
 </head>
 <body>
@@ -436,6 +466,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
   <div class="nav-tabs">
     <button class="nav-tab active" data-tab="dashboard">Dashboard</button>
     <button class="nav-tab" data-tab="ideas">Ideas</button>
+    <button class="nav-tab" data-tab="charts">Charts</button>
   </div>
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
@@ -610,6 +641,40 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
       <button class="new-idea-btn" onclick="openNewIdea()">+ Post Idea</button>
     </div>
     <div class="ideas-feed" id="ideas-feed"><div class="no-ideas">Loading ideas…</div></div>
+  </div>
+  <div id="tab-charts" class="tab-panel">
+    <div class="charts-layout">
+      <div class="charts-sidebar">
+        <div class="charts-sidebar-top">
+          <h3>Select Asset</h3>
+          <input class="charts-search" id="charts-search" type="text" placeholder="Search..." oninput="chartsFilterList(this.value)">
+        </div>
+        <div class="charts-ticker-list" id="charts-ticker-list"></div>
+      </div>
+      <div class="charts-main">
+        <div class="charts-header-row">
+          <div>
+            <div class="charts-big-title" id="charts-title">Select an asset from the sidebar</div>
+            <div class="charts-sub" id="charts-sub"></div>
+          </div>
+          <div class="charts-legend">
+            <div class="charts-legend-item"><div class="charts-legend-dot" style="background:#4e9af1"></div>Price (log)</div>
+            <div class="charts-legend-item"><div class="charts-legend-dot" style="background:rgba(239,68,68,0.85)"></div>Risk (0&ndash;1)</div>
+          </div>
+        </div>
+        <div class="charts-zoom-row">
+          <button class="czb czb-active" data-zoom="all" onclick="chartsZoom('all',this)">All</button>
+          <button class="czb" data-zoom="10y" onclick="chartsZoom('10y',this)">10Y</button>
+          <button class="czb" data-zoom="5y" onclick="chartsZoom('5y',this)">5Y</button>
+          <button class="czb" data-zoom="2y" onclick="chartsZoom('2y',this)">2Y</button>
+          <button class="czb" data-zoom="1y" onclick="chartsZoom('1y',this)">1Y</button>
+          <button class="czb-reset" id="charts-reset-btn" onclick="chartsResetZoom()">&#8634; Reset Zoom</button>
+        </div>
+        <div class="charts-canvas-wrap">
+          <canvas id="charts-canvas"></canvas>
+        </div>
+      </div>
+    </div>
   </div>
 </main>
 </div><!-- .page -->
@@ -890,6 +955,7 @@ document.querySelectorAll('.nav-tab').forEach(btn => {
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'ideas') loadIdeas();
+    if (btn.dataset.tab === 'charts') initChartsTab();
   });
 });
 
@@ -2358,7 +2424,257 @@ function buildAccumPie() {
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────
-loadDashboard();
+loadDashboard
+// ── Charts Tab ────────────────────────────────────────────────────────────────
+let _chartsInited = false;
+let _chartsChart = null;
+let _chartsActiveTicker = null;
+let _chartsActiveZoom = 'all';
+let _chartsFullDates = [];
+let _chartsFullPrices = [];
+let _chartsFullRisks = [];
+
+function initChartsTab() {
+  if (!G.data) return;
+  if (!_chartsInited) {
+    _buildChartsSidebar('');
+    _chartsInited = true;
+  }
+  if (!_chartsActiveTicker) {
+    const tickers = Object.keys(G.data.stocks);
+    if (tickers.length) chartsSelectTicker(tickers[0]);
+  }
+  setTimeout(() => { if (_chartsChart) _chartsChart.resize(); }, 50);
+}
+
+function _buildChartsSidebar(filter) {
+  const list = document.getElementById('charts-ticker-list');
+  if (!list || !G.data) return;
+  const stocks = G.data.stocks;
+  const keys = Object.keys(stocks).filter(t => {
+    if (!filter) return true;
+    const s = stocks[t];
+    return t.toLowerCase().includes(filter.toLowerCase()) ||
+           (s.name||'').toLowerCase().includes(filter.toLowerCase());
+  });
+  list.innerHTML = keys.map(t => {
+    const s = stocks[t];
+    const r = s.risk != null ? s.risk : null;
+    let rColor = '#888';
+    if (r != null) {
+      if (r <= 0.35) rColor = 'var(--accumulate)';
+      else if (r <= 0.65) rColor = 'var(--neutral)';
+      else if (r <= 0.85) rColor = 'var(--caution)';
+      else rColor = 'var(--extreme)';
+    }
+    const active = t === _chartsActiveTicker ? ' cti-active' : '';
+    return '<div class="charts-ticker-item' + active + '" onclick="chartsSelectTicker(\'' + t + '\')" data-sym="' + t + '">' +
+      '<div><div class="charts-ticker-sym">' + t + '</div>' +
+      '<div class="charts-ticker-name">' + (s.name||'') + '</div></div>' +
+      (r != null ? '<div class="charts-ticker-risk" style="color:' + rColor + ';background:' + rColor + '22">' + r.toFixed(3) + '</div>' : '') +
+      '</div>';
+  }).join('');
+}
+
+function chartsFilterList(val) {
+  _buildChartsSidebar(val);
+}
+
+function chartsSelectTicker(ticker) {
+  _chartsActiveTicker = ticker;
+  _chartsActiveZoom = 'all';
+
+  document.querySelectorAll('.charts-ticker-item').forEach(el => {
+    el.classList.toggle('cti-active', el.dataset.sym === ticker);
+  });
+
+  const s = G.data.stocks[ticker];
+  if (!s || !s.chart) return;
+
+  document.getElementById('charts-title').textContent = (s.name || ticker) + ' (' + ticker + ')';
+  const r = s.risk != null ? s.risk.toFixed(3) : 'N/A';
+  document.getElementById('charts-sub').textContent =
+    'Risk: ' + r + '  ·  Zone: ' + (s.zone||'') + '  ·  Method: ' + (s.risk_method||'') +
+    '  ·  Price: $' + (s.price != null ? s.price.toFixed(2) : 'N/A');
+
+  _chartsFullDates  = s.chart.dates  || [];
+  _chartsFullPrices = s.chart.prices || [];
+  _chartsFullRisks  = s.chart.risks  || [];
+
+  document.querySelectorAll('.czb').forEach(b => b.classList.remove('czb-active'));
+  const allBtn = document.querySelector('.czb[data-zoom="all"]');
+  if (allBtn) allBtn.classList.add('czb-active');
+  document.getElementById('charts-reset-btn').style.display = 'none';
+
+  _chartsRender(_chartsFullDates, _chartsFullPrices, _chartsFullRisks);
+}
+
+function _chartsRender(dates, prices, risks) {
+  const canvas = document.getElementById('charts-canvas');
+  if (!canvas) return;
+  const wrap = canvas.parentElement;
+  canvas.style.width  = '100%';
+  canvas.style.height = '100%';
+
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
+  const textColor = isDark ? '#9ca3af' : '#6b7280';
+
+  const chartData = {
+    labels: dates,
+    datasets: [
+      {
+        label: 'Price',
+        data: prices,
+        borderColor: '#4e9af1',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0.1,
+        yAxisID: 'yPrice',
+        order: 2,
+      },
+      {
+        label: 'Risk',
+        data: risks,
+        borderColor: 'rgba(239,68,68,0.9)',
+        borderWidth: 1.2,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0.1,
+        fill: 'origin',
+        backgroundColor: function(ctx) {
+          const chart = ctx.chart;
+          const {ctx: c, chartArea} = chart;
+          if (!chartArea) return 'rgba(239,68,68,0.3)';
+          const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+          g.addColorStop(0,   'rgba(239,68,68,0.55)');
+          g.addColorStop(0.4, 'rgba(234,179,8,0.35)');
+          g.addColorStop(0.7, 'rgba(132,204,22,0.25)');
+          g.addColorStop(1,   'rgba(132,204,22,0.05)');
+          return g;
+        },
+        yAxisID: 'yRisk',
+        order: 1,
+      }
+    ]
+  };
+
+  const opts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: isDark ? '#1e1e2e' : '#fff',
+        borderColor: isDark ? '#333' : '#ddd',
+        borderWidth: 1,
+        titleColor: textColor,
+        bodyColor: isDark ? '#e2e8f0' : '#1f2937',
+        padding: 10,
+        callbacks: {
+          title: (items) => items[0].label,
+          label: (item) => {
+            if (item.datasetIndex === 0) return '  Price: $' + Number(item.raw).toFixed(2);
+            return '  Risk:  ' + Number(item.raw).toFixed(3);
+          }
+        }
+      },
+      zoom: {
+        pan: { enabled: false },
+        zoom: {
+          drag: {
+            enabled: true,
+            backgroundColor: 'rgba(147,112,219,0.15)',
+            borderColor: 'rgba(147,112,219,0.6)',
+            borderWidth: 1,
+          },
+          mode: 'x',
+          onZoomComplete: function() {
+            document.getElementById('charts-reset-btn').style.display = '';
+            document.querySelectorAll('.czb').forEach(b => b.classList.remove('czb-active'));
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        type: 'category',
+        ticks: {
+          color: textColor,
+          maxRotation: 0,
+          autoSkip: true,
+          maxTicksLimit: 10,
+          font: { size: 10, family: "'JetBrains Mono', monospace" }
+        },
+        grid: { color: gridColor }
+      },
+      yPrice: {
+        type: 'logarithmic',
+        position: 'left',
+        ticks: {
+          color: '#4e9af1',
+          font: { size: 10, family: "'JetBrains Mono', monospace" },
+          callback: function(v) {
+            if (v >= 1000) return '$' + (v/1000).toFixed(0) + 'K';
+            if (v >= 1)    return '$' + v.toFixed(0);
+            return '$' + v.toFixed(2);
+          }
+        },
+        grid: { color: gridColor }
+      },
+      yRisk: {
+        type: 'linear',
+        position: 'right',
+        min: 0,
+        max: 1,
+        ticks: {
+          color: 'rgba(239,68,68,0.85)',
+          font: { size: 10, family: "'JetBrains Mono', monospace" },
+          stepSize: 0.1
+        },
+        grid: { drawOnChartArea: false }
+      }
+    }
+  };
+
+  if (_chartsChart) { _chartsChart.destroy(); _chartsChart = null; }
+  _chartsChart = new Chart(canvas, { type: 'line', data: chartData, options: opts });
+}
+
+function chartsZoom(period, btn) {
+  if (!_chartsActiveTicker || !_chartsFullDates.length) return;
+  _chartsActiveZoom = period;
+  if (_chartsChart) { try { _chartsChart.resetZoom(); } catch(e){} }
+  document.getElementById('charts-reset-btn').style.display = 'none';
+  document.querySelectorAll('.czb').forEach(b => b.classList.remove('czb-active'));
+  if (btn) btn.classList.add('czb-active');
+
+  let dates = _chartsFullDates, prices = _chartsFullPrices, risks = _chartsFullRisks;
+  if (period !== 'all') {
+    const years = parseInt(period);
+    const cutoff = new Date();
+    cutoff.setFullYear(cutoff.getFullYear() - years);
+    const cutStr = cutoff.toISOString().slice(0, 10);
+    const idx = dates.findIndex(d => d >= cutStr);
+    if (idx > 0) {
+      dates  = dates.slice(idx);
+      prices = prices.slice(idx);
+      risks  = risks.slice(idx);
+    }
+  }
+  _chartsRender(dates, prices, risks);
+}
+
+function chartsResetZoom() {
+  if (_chartsChart) { try { _chartsChart.resetZoom(); } catch(e){} }
+  document.getElementById('charts-reset-btn').style.display = 'none';
+  const btn = document.querySelector('.czb[data-zoom="' + _chartsActiveZoom + '"]');
+  chartsZoom(_chartsActiveZoom, btn);
+}
+();
 </script>
 </body>
 </html>
