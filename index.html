@@ -874,13 +874,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent2)}
   <div class="settings-box">
     <div class="idea-modal-title">⚙ Settings</div>
     <div class="settings-note">
-      To post ideas, enter a GitHub PAT with <code>repo</code> scope.<br>
+      Ideas are public &mdash; anyone can post. No login required.<br>
       <a href="https://github.com/settings/tokens/new?scopes=repo&description=Portfolio+Dashboard" target="_blank">Create one here →</a><br><br>
       Your PAT is stored locally on this device only.
     </div>
-    <div class="form-g" style="margin-bottom:.75rem"><label>GitHub Owner</label><input type="text" id="s-owner" placeholder="dannypeters15"></div>
-    <div class="form-g" style="margin-bottom:.75rem"><label>GitHub Repo</label><input type="text" id="s-repo" placeholder="portfolio-dashboard"></div>
-    <div class="form-g" style="margin-bottom:.75rem"><label>GitHub PAT</label><input type="text" id="s-pat" placeholder="ghp_xxxxxxxxxxxx"></div>
+    
+    
+    
     <div class="form-actions">
       <button class="cancel-btn" onclick="document.getElementById('settings-overlay').classList.remove('open')">Cancel</button>
       <button class="submit-btn" onclick="saveSettings()">Save</button>
@@ -1859,146 +1859,73 @@ function saveNotes() {
 
 // ── Ideas ──────────────────────────────────────────────────────────────────────
 async function loadIdeas() {
-  const s = getSettings();
-  const url = `https://api.github.com/repos/${s.owner}/${s.repo}/contents/ideas.json`;
   try {
-    const headers = { Accept:'application/vnd.github.v3+json' };
-    if (s.pat) headers.Authorization = `token ${s.pat}`;
-    const r = await fetch(url, {headers});
-    if (!r.ok) throw new Error('Could not load ideas.json — check settings');
-    const meta = await r.json();
-    const raw  = JSON.parse(atob(meta.content.replace(/\n/g,'')));
-    G.ideas    = raw.ideas || [];
-    G.ideasSha = meta.sha;
-    renderIdeas();
-  } catch(e) {
-    document.getElementById('ideas-feed').innerHTML =
-      `<div class="no-ideas">${esc(e.message)}</div>`;
-  }
+    const resp = await fetch(
+      'https://ycojsthejfsahwskqetp.supabase.co/rest/v1/ideas?select=*&order=date.desc',
+      { headers: {
+          'apikey': 'sb_publishable_6AWZ9SDmwFf_8l7oophbiw_k-RS1OqX',
+          'Authorization': 'Bearer sb_publishable_6AWZ9SDmwFf_8l7oophbiw_k-RS1OqX'
+      }}
+    );
+    const data = await resp.json();
+    G.ideas = Array.isArray(data) ? data : [];
+  } catch(e) { G.ideas = []; }
+  renderIdeas();
 }
 
-function renderIdeas() {
-  const tF = document.getElementById('ideas-ticker-filter')?.value||'';
-  const lF = document.getElementById('ideas-label-filter')?.value||'';
-  let ideas = [...G.ideas].sort((a,b)=>new Date(b.date)-new Date(a.date));
-  if (tF) ideas = ideas.filter(i=>i.ticker===tF);
-  if (lF) ideas = ideas.filter(i=>i.label===lF);
-  if (!ideas.length) {
-    document.getElementById('ideas-feed').innerHTML='<div class="no-ideas">No ideas posted yet.</div>';
-    return;
-  }
-  document.getElementById('ideas-feed').innerHTML = ideas.map(idea=>`
-    <div class="idea-card">
-      <div class="idea-card-header">
-        <div class="idea-avatar">${(idea.username||'?').slice(0,2).toUpperCase()}</div>
-        <div style="flex:1;min-width:0">
-          <div class="idea-username">${esc(idea.username||'Anonymous')}</div>
-          <div class="idea-date">${new Date(idea.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
-        </div>
-        <span class="idea-ticker-chip" onclick="document.getElementById('ideas-ticker-filter').value='${idea.ticker}';renderIdeas()">${idea.ticker}</span>
-        <span class="${idea.label==='bull'?'bull-badge':'bear-badge'}">${idea.label==='bull'?'↑ BULL':'↓ BEAR'}</span>
-        <span class="idea-stars">${stars(idea.rating)}</span>
-      </div>
-      <div class="idea-card-body">
-        ${idea.text?`<div class="idea-text">${esc(idea.text)}</div>`:''}
-        ${idea.image?`<img class="idea-img" src="${esc(idea.image)}" onclick="openLightbox('${idea.image.replace(/'/g,'\\\'')}')">`:''}
-      </div>
-    </div>`).join('');
-}
-
-function populateIdeaTickers(data) {
-  const s = document.getElementById('i-ticker');
-  const f = document.getElementById('ideas-ticker-filter');
-  const tickers = Object.keys(data.stocks).sort();
-  const opts = tickers.map(t=>`<option>${t}</option>`).join('');
-  if (s) s.innerHTML = opts;
-  if (f) f.innerHTML = '<option value="">All Tickers</option>' + opts;
-}
-
-function openNewIdea() {
-  G.ideaState = {label:'bull',rating:3,imageB64:null};
-  document.getElementById('i-username').value = localStorage.getItem('idea_user')||'';
-  document.getElementById('i-text').value = '';
-  document.getElementById('i-img-prev').style.display='none';
-  document.getElementById('i-file').value='';
-  document.getElementById('i-status').style.display='none';
-  setBB('bull'); setStar(3);
-  document.getElementById('idea-overlay').classList.add('open');
-}
-function closeIdeaModal() { document.getElementById('idea-overlay').classList.remove('open'); }
-function handleIdeaOverlayClick(e) { if(e.target===document.getElementById('idea-overlay')) closeIdeaModal(); }
-
-function setBB(v) {
-  G.ideaState.label = v;
-  document.getElementById('bb-bull').className = 'bb-btn' + (v==='bull'?' bull-active':'');
-  document.getElementById('bb-bear').className = 'bb-btn' + (v==='bear'?' bear-active':'');
-}
-function setStar(v) {
-  G.ideaState.rating = v;
-  document.querySelectorAll('.star-pick').forEach(s => s.classList.toggle('lit', +s.dataset.v <= v));
-}
-async function handleImg(e) {
-  const f = e.target.files[0]; if(!f) return;
-  G.ideaState.imageB64 = await compressImg(f, 900, 0.72);
-  const p = document.getElementById('i-img-prev');
-  p.src = G.ideaState.imageB64; p.style.display='block';
-}
-function compressImg(file, maxW, q) {
-  return new Promise(res => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      const img = new Image();
-      img.onload = () => {
-        const scale = Math.min(1, maxW/img.width);
-        const c = document.createElement('canvas');
-        c.width = img.width*scale; c.height = img.height*scale;
-        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        res(c.toDataURL('image/jpeg', q));
-      };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
 
 async function submitIdea() {
-  const s = getSettings();
-  if (!s.pat) { alert('Add your GitHub PAT in ⚙ Settings to post ideas.'); return; }
-  const username = document.getElementById('i-username').value.trim()||'Anonymous';
+  const username = document.getElementById('i-username').value.trim() || 'Anonymous';
   const ticker   = document.getElementById('i-ticker').value;
   const text     = document.getElementById('i-text').value.trim();
   if (!ticker) { alert('Please select a ticker.'); return; }
   localStorage.setItem('idea_user', username);
 
   const idea = {
-    id:Date.now().toString(36), date:new Date().toISOString(),
-    username, ticker, label:G.ideaState.label, rating:G.ideaState.rating,
-    text, image:G.ideaState.imageB64||null,
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    date: new Date().toISOString(),
+    username, ticker,
+    label:  G.ideaState.label,
+    rating: G.ideaState.rating,
+    text,
+    image:  G.ideaState.imageB64 || null,
   };
 
-  const btn = document.getElementById('i-submit');
+  const btn    = document.getElementById('i-submit');
   const status = document.getElementById('i-status');
-  btn.disabled=true; status.style.display='block'; status.textContent='Posting…';
+  btn.disabled = true;
+  status.style.display = 'block';
+  status.textContent = 'Posting\u2026';
 
   try {
-    const url = `https://api.github.com/repos/${s.owner}/${s.repo}/contents/ideas.json`;
-    const headers = {Authorization:`token ${s.pat}`,Accept:'application/vnd.github.v3+json','Content-Type':'application/json'};
-    const getR = await fetch(url,{headers});
-    const getMeta = await getR.json();
-    const cur = JSON.parse(atob(getMeta.content.replace(/\n/g,'')));
-    cur.ideas = [idea,...(cur.ideas||[])];
-    const putR = await fetch(url,{method:'PUT',headers,body:JSON.stringify({
-      message:`idea: ${username} ${ticker} ${G.ideaState.label}`,
-      content:btoa(unescape(encodeURIComponent(JSON.stringify(cur)))),
-      sha:getMeta.sha,
-    })});
-    if (!putR.ok) throw new Error((await putR.json()).message);
-    G.ideas = cur.ideas;
+    const resp = await fetch(
+      'https://ycojsthejfsahwskqetp.supabase.co/rest/v1/ideas',
+      {
+        method: 'POST',
+        headers: {
+          'apikey': 'sb_publishable_6AWZ9SDmwFf_8l7oophbiw_k-RS1OqX',
+          'Authorization': 'Bearer sb_publishable_6AWZ9SDmwFf_8l7oophbiw_k-RS1OqX',
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify(idea)
+      }
+    );
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    status.textContent = 'Posted!';
+    G.ideas.unshift(idea);
     renderIdeas();
-    closeIdeaModal();
+    document.getElementById('i-text').value = '';
+    G.ideaState = { label: null, rating: null, imageB64: null };
+    setTimeout(function() {
+      document.getElementById('idea-modal').classList.remove('open');
+      status.style.display = 'none';
+      btn.disabled = false;
+    }, 800);
   } catch(e) {
-    status.textContent = '❌ ' + e.message;
-  } finally { btn.disabled=false; }
+    status.textContent = 'Error: ' + e.message;
+    btn.disabled = false;
+  }
 }
 
 // Lightbox
@@ -2437,10 +2364,10 @@ let _chartsFullRisks = [];
 function initChartsTab() {
   if (!G.data) return;
   if (!_chartsInited) {
-    const list = document.getElementById('charts-ticker-list');
+    var list = document.getElementById('charts-ticker-list');
     if (list) {
       list.addEventListener('click', function(e) {
-        const item = e.target.closest('.charts-ticker-item');
+        var item = e.target.closest('.charts-ticker-item');
         if (item && item.dataset.sym) chartsSelectTicker(item.dataset.sym);
       });
     }
@@ -2448,34 +2375,34 @@ function initChartsTab() {
     _chartsInited = true;
   }
   if (!_chartsActiveTicker) {
-    const tickers = Object.keys(G.data.stocks);
+    var tickers = Object.keys(G.data.stocks);
     if (tickers.length) chartsSelectTicker(tickers[0]);
   }
   setTimeout(function() { if (_chartsChart) _chartsChart.resize(); }, 50);
 }
 
 function _buildChartsSidebar(filter) {
-  const list = document.getElementById('charts-ticker-list');
+  var list = document.getElementById('charts-ticker-list');
   if (!list || !G.data) return;
-  const stocks = G.data.stocks;
-  const keys = Object.keys(stocks).filter(function(t) {
+  var stocks = G.data.stocks;
+  var keys = Object.keys(stocks).filter(function(t) {
     if (!filter) return true;
-    const s = stocks[t];
+    var s = stocks[t];
     return t.toLowerCase().includes(filter.toLowerCase()) ||
            (s.name || '').toLowerCase().includes(filter.toLowerCase());
   });
   list.innerHTML = keys.map(function(t) {
-    const s = stocks[t];
-    const r = s.risk != null ? s.risk : null;
-    let rColor = '#888';
+    var s = stocks[t];
+    var r = s.risk != null ? s.risk : null;
+    var rColor = '#888';
     if (r != null) {
       if (r <= 0.35) rColor = 'var(--accumulate)';
       else if (r <= 0.65) rColor = 'var(--neutral)';
       else if (r <= 0.85) rColor = 'var(--caution)';
       else rColor = 'var(--extreme)';
     }
-    const active = t === _chartsActiveTicker ? ' cti-active' : '';
-    const rBadge = r != null
+    var active = t === _chartsActiveTicker ? ' cti-active' : '';
+    var rBadge = r != null
       ? '<div class="charts-ticker-risk" style="color:' + rColor + ';background:' + rColor + '22">' + r.toFixed(3) + '</div>'
       : '';
     return '<div class="charts-ticker-item' + active + '" data-sym="' + t + '">'
@@ -2493,10 +2420,10 @@ function chartsSelectTicker(ticker) {
   document.querySelectorAll('.charts-ticker-item').forEach(function(el) {
     el.classList.toggle('cti-active', el.dataset.sym === ticker);
   });
-  const s = G.data.stocks[ticker];
+  var s = G.data.stocks[ticker];
   if (!s || !s.chart) return;
   document.getElementById('charts-title').textContent = (s.name || ticker) + ' (' + ticker + ')';
-  const r = s.risk != null ? s.risk.toFixed(3) : 'N/A';
+  var r = s.risk != null ? s.risk.toFixed(3) : 'N/A';
   document.getElementById('charts-sub').textContent =
     'Risk: ' + r + '  \u00b7  Zone: ' + (s.zone || '') +
     '  \u00b7  Method: ' + (s.risk_method || '') +
@@ -2505,21 +2432,21 @@ function chartsSelectTicker(ticker) {
   _chartsFullPrices = s.chart.prices || [];
   _chartsFullRisks  = s.chart.risks  || [];
   document.querySelectorAll('.czb').forEach(function(b) { b.classList.remove('czb-active'); });
-  const allBtn = document.querySelector('.czb[data-zoom="all"]');
+  var allBtn = document.querySelector('.czb[data-zoom="all"]');
   if (allBtn) allBtn.classList.add('czb-active');
   document.getElementById('charts-reset-btn').style.display = 'none';
   _chartsRender(_chartsFullDates, _chartsFullPrices, _chartsFullRisks);
 }
 
 function _chartsRender(dates, prices, risks) {
-  const canvas = document.getElementById('charts-canvas');
+  var canvas = document.getElementById('charts-canvas');
   if (!canvas) return;
   canvas.style.width  = '100%';
   canvas.style.height = '100%';
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
-  const textColor = isDark ? '#9ca3af' : '#6b7280';
-  const chartData = {
+  var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  var gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
+  var textColor = isDark ? '#9ca3af' : '#6b7280';
+  var chartData = {
     labels: dates,
     datasets: [
       {
@@ -2547,7 +2474,7 @@ function _chartsRender(dates, prices, risks) {
       }
     ]
   };
-  const opts = {
+  var opts = {
     responsive: true, maintainAspectRatio: false, animation: false,
     interaction: { mode: 'index', intersect: false },
     plugins: {
