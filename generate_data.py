@@ -129,17 +129,41 @@ def yahoo_get(url, timeout=20):
 
 # ── Data fetchers ──────────────────────────────────────────────────────────────
 def fetch_history(ticker):
-    url = f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=max"
-    try:
-        data = yahoo_get(url)
-        result = data["chart"]["result"][0]
-        ts     = result["timestamp"]
-        closes = result["indicators"]["quote"][0]["close"]
-        pts = [(date.fromtimestamp(t), c) for t, c in zip(ts, closes) if c and c > 0]
-        return sorted(pts)
-    except Exception as e:
-        print(f"  ⚠ History failed for {ticker}: {e}")
+    """
+    Two-call strategy to get maximum granularity:
+    - Monthly for full history (range=max&interval=1mo)
+    - Daily for last 5 years (range=5y&interval=1d)
+    Merge: daily points replace monthly for the overlapping period.
+    """
+    def _fetch(interval, range_):
+        url = (f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}"
+               f"?interval={interval}&range={range_}")
+        try:
+            data = yahoo_get(url)
+            result = data["chart"]["result"][0]
+            ts     = result["timestamp"]
+            closes = result["indicators"]["quote"][0]["close"]
+            return [(date.fromtimestamp(t), c) for t, c in zip(ts, closes) if c and c > 0]
+        except Exception as e:
+            print(f"  ⚠ History fetch ({interval}/{range_}) failed for {ticker}: {e}")
+            return []
+
+    monthly = _fetch("1mo", "max")   # full history, monthly granularity
+    daily   = _fetch("1d",  "5y")    # last 5 years, daily granularity
+
+    if not monthly and not daily:
         return []
+
+    # Build merged set: start with monthly, then overwrite overlap with daily
+    if daily:
+        daily_start = daily[0][0]
+        # Keep monthly points before the daily window
+        combined = [(d, p) for d, p in monthly if d < daily_start]
+        combined += daily
+    else:
+        combined = monthly
+
+    return sorted(set(combined))
 
 
 def fetch_news(ticker):
@@ -543,20 +567,13 @@ def calculate_risk(history, inception_str, ticker_hint=""):
         locals().get('week52_hi_val'), locals().get('analyst_tgt_val')
     )
 
-    # ── Chart data — daily last 5Y, weekly for older history ─────────────
-    # data[i] = (date, price) — d is a Python date object
-    from datetime import date as _dc
-    _t = _dc.today()
-    _cut = _dc(_t.year - 5, _t.month, _t.day)
-    chart_data_raw = []
-    for _ci, (_cd, _cp) in enumerate(data):
-        if _cd >= _cut:
-            chart_data_raw.append((_cd, _cp, full_risks[_ci], buy_score_history[_ci]))
-        elif _ci % 5 == 0:
-            chart_data_raw.append((_cd, _cp, full_risks[_ci], buy_score_history[_ci]))
-    _cl = (data[-1][0], data[-1][1], full_risks[-1], buy_score_history[-1])
-    if not chart_data_raw or chart_data_raw[-1] != _cl:
-        chart_data_raw.append(_cl)
+    # ── Chart data — use all data points (daily last 5Y + monthly before) ───
+    # fetch_history already gives daily for last 5Y, monthly for older history
+    # so no further downsampling needed — just pass everything through
+    chart_data_raw = [
+        (d, p, full_risks[i], buy_score_history[i])
+        for i, (d, p) in enumerate(data)
+    ]
 
     chart = {
         "dates":       [d.isoformat() for d, _, _, _ in chart_data_raw],
