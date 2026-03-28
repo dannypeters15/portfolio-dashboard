@@ -544,21 +544,19 @@ def calculate_risk(history, inception_str, ticker_hint=""):
     )
 
     # ── Chart data — daily last 5Y, weekly for older history ─────────────
-    # Last 5 years: every trading day (max detail for zoomed views)
-    # Older than 5 years: every 5th trading day (~weekly, keeps file manageable)
-    from datetime import datetime, timezone, timedelta
-    _cutoff_5y = datetime.now(timezone.utc) - timedelta(days=5 * 365)
+    # data[i] = (date, price) — d is a Python date object
+    from datetime import date as _dc
+    _t = _dc.today()
+    _cut = _dc(_t.year - 5, _t.month, _t.day)
     chart_data_raw = []
-    for _i, (_d, _p) in enumerate(data):
-        _dt = _d if hasattr(_d, 'tzinfo') and _d.tzinfo else               datetime.combine(_d, datetime.min.time()).replace(tzinfo=timezone.utc)
-        if _dt >= _cutoff_5y:
-            chart_data_raw.append((_d, _p, full_risks[_i], buy_score_history[_i]))
-        elif _i % 5 == 0:
-            chart_data_raw.append((_d, _p, full_risks[_i], buy_score_history[_i]))
-    # Always include the most recent point
-    _last = (data[-1][0], data[-1][1], full_risks[-1], buy_score_history[-1])
-    if not chart_data_raw or chart_data_raw[-1] != _last:
-        chart_data_raw.append(_last)
+    for _ci, (_cd, _cp) in enumerate(data):
+        if _cd >= _cut:
+            chart_data_raw.append((_cd, _cp, full_risks[_ci], buy_score_history[_ci]))
+        elif _ci % 5 == 0:
+            chart_data_raw.append((_cd, _cp, full_risks[_ci], buy_score_history[_ci]))
+    _cl = (data[-1][0], data[-1][1], full_risks[-1], buy_score_history[-1])
+    if not chart_data_raw or chart_data_raw[-1] != _cl:
+        chart_data_raw.append(_cl)
 
     chart = {
         "dates":       [d.isoformat() for d, _, _, _ in chart_data_raw],
